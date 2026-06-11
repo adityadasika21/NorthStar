@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(cp \"/home/aditya/.claude/projects/-home-aditya-Work-repos-Northstar-Android/428b28d7-c544-478a-b92a-3bbae08ca3d8/tool-results/webfetch-1781115742279-glcnd5.bin\" /tmp/sherpa_design.gz)",
+      "Bash(gunzip -f /tmp/sherpa_design.gz)",
+      "Read(//tmp/**)",
+      "Bash(mkdir -p /tmp/sherpa_design_extracted)",
+      "Bash(tar -xf /tmp/sherpa_design -C /tmp/sherpa_design_extracted)",
+      "Bash(keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android)",
+      "Bash(keytool -list -v -keystore /home/aditya/.var/app/com.google.AndroidStudio/config/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android)",
+      "Bash(xargs -0 sed -i 's/SherpaApplication/NorthstarApplication/g; *)",
+      "Bash(xargs ls -la)",
+      "Read(//home/aditya/.local/share/**)",
+      "Read(//home/aditya/.var/app/com.google.AndroidStudio/data/**)",
+      "Bash(flatpak info *)",
+      "Bash(JAVA_HOME=/var/lib/flatpak/app/com.google.AndroidStudio/x86_64/stable/facf2da2e53725c0ba92aaa4e9dc35dc736b3083f2fb72e127bc6717f723802e/files/extra/jbr ./gradlew compileDebugKotlin -q --console=plain)",
+      "Bash(git clone *)",
+      "Bash(sed -n '740,775p' /tmp/better-dash/tripper_app_like_nav.py)",
+      "Bash(sed -n '1795,1870p' /tmp/better-dash/tripper_app_like_nav.py)",
+      "Bash(sed -n '36,70p' /tmp/better-dash/tripper_app_like_nav.py)",
+      "Bash(sed -n '300,400p' /tmp/better-dash/tripper_app_like_nav.py)",
+      "Bash(adb devices *)",
+      "Bash(~/Android/Sdk/platform-tools/adb devices *)",
+      "Bash(JAVA_HOME=/var/lib/flatpak/app/com.google.AndroidStudio/x86_64/stable/facf2da2e53725c0ba92aaa4e9dc35dc736b3083f2fb72e127bc6717f723802e/files/extra/jbr ./gradlew :app:installDebug -q --console=plain)",
+      "Bash(/var/lib/flatpak/app/com.google.AndroidStudio/x86_64/stable/facf2da2e53725c0ba92aaa4e9dc35dc736b3083f2fb72e127bc6717f723802e/files/extra/jbr/bin/keytool -list -v -keystore /home/aditya/.var/app/com.google.AndroidStudio/config/.android/debug.keystore -storepass android -keypass android -alias androiddebugkey)",
+      "Bash(python3 -c ' *)",
+      "Bash(awk '/23:49:0[8-9]|23:49:[12][0-9]/' '/home/aditya/Work/repos/Northstar Android/signin.log')",
+      "Bash(awk '/23:49:09|23:49:1[0-9]|23:49:[2-5][0-9]/' '/home/aditya/Work/repos/Northstar Android/signin.log')",
+      "Bash(JAVA_HOME=__TRACKED_VAR__ ./gradlew :app:assembleDebug -q --console=plain)",
+      "Skill(update-config)",
+      "Bash(ls -la .claude)",
+      "Bash(cat .claude/settings.json)",
+      "Bash(cat .claude/settings.local.json)",
+      "Bash(grep -i claude .gitignore)"
+    ]
+  }
+}

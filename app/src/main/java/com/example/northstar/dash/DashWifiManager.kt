@@ -47,6 +47,15 @@ class DashWifiManager(
     private val _state = MutableStateFlow(WifiState())
     val state = _state.asStateFlow()
 
+    /**
+     * The dash WiFi network, exposed so the dash UDP sockets can be bound to it
+     * INDIVIDUALLY (Network.bindSocket). We deliberately do NOT bindProcessToNetwork:
+     * that routed the WHOLE app through the dash's no-internet WiFi, so routing,
+     * geocoding and shared-link resolution all failed while connected ("can't share").
+     */
+    @Volatile var network: Network? = null
+        private set
+
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var reconnectJob: Job? = null
     private var wantConnected = false
@@ -93,14 +102,14 @@ class DashWifiManager(
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 Log.i(TAG, "WiFi connected ✓  network=$network")
-                cm.bindProcessToNetwork(network)
+                this@DashWifiManager.network = network
                 reconnectJob?.cancel()
                 _state.value = WifiState(status = WifiConnStatus.CONNECTED, ssid = pendingSsid)
             }
 
             override fun onUnavailable() {
                 Log.w(TAG, "WiFi unavailable — SSID not found or user declined")
-                cm.bindProcessToNetwork(null)
+                this@DashWifiManager.network = null
                 _state.value = WifiState(
                     status = WifiConnStatus.ERROR,
                     ssid   = pendingSsid,
@@ -112,7 +121,7 @@ class DashWifiManager(
 
             override fun onLost(network: Network) {
                 Log.w(TAG, "WiFi link lost — reconnecting in ${RECONNECT_DELAY}ms")
-                cm.bindProcessToNetwork(null)
+                this@DashWifiManager.network = null
                 _state.value = WifiState(
                     status = WifiConnStatus.REQUESTING,
                     ssid   = pendingSsid,
@@ -146,6 +155,6 @@ class DashWifiManager(
     private fun release() {
         networkCallback?.let { runCatching { cm.unregisterNetworkCallback(it) } }
         networkCallback = null
-        cm.bindProcessToNetwork(null)
+        network = null
     }
 }

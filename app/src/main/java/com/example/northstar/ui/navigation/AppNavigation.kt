@@ -29,6 +29,8 @@ import com.example.northstar.ui.screens.*
 import com.example.northstar.ui.theme.*
 import com.example.northstar.viewmodel.AppViewModel
 import com.example.northstar.viewmodel.AuthViewModel
+import com.example.northstar.viewmodel.ConnStage
+import com.example.northstar.viewmodel.ConnectionState
 import com.example.northstar.viewmodel.DashViewModel
 import com.example.northstar.viewmodel.RouteViewModel
 
@@ -68,9 +70,17 @@ fun AppNavigation(
         Screen.Garage.route, Screen.Rides.route,
     )
 
-    val conn by appViewModel.conn.collectAsState()
     val garageTab by appViewModel.garageTab.collectAsState()
     val routeState by routeViewModel.state.collectAsState()
+
+    // Single source of truth for connection status: the real dash stage. Fixes Home
+    // claiming "Connected" while the Dash screen says it isn't.
+    val dashUi by dashViewModel.ui.collectAsState()
+    val conn = when (dashUi.stage) {
+        ConnStage.STREAMING -> ConnectionState.Connected
+        ConnStage.WIFI, ConnStage.AUTH -> ConnectionState.Searching
+        else -> ConnectionState.Offline
+    }
 
     // Prefetch map tiles the moment a destination resolves (internet still reachable here)
     LaunchedEffect(routeState.destination?.lat, routeState.destination?.lng) {
@@ -129,6 +139,9 @@ fun AppNavigation(
                                 lat  = routeState.destination?.lat,
                                 lng  = routeState.destination?.lng,
                             )
+                            // Start navigation: open the dash view and begin the
+                            // WiFi → auth → stream flow (no-op if already streaming).
+                            dashViewModel.connect()
                             navController.navigate(Screen.Dash.route) {
                                 popUpTo(Screen.Home.route)
                             }
@@ -208,7 +221,10 @@ private fun NorthstarBottomNav(
                     ) { onNavSelect(tab.screen) }
                     .padding(vertical = 6.dp),
             ) {
-                Box(contentAlignment = Alignment.BottomCenter) {
+                // Fixed-height container with the icon top-aligned and the active dot
+                // bottom-aligned — so reserving space for the dot doesn't shove the
+                // selected icon downward relative to the others.
+                Box(Modifier.height(29.dp), contentAlignment = Alignment.TopCenter) {
                     Icon(
                         tab.icon, contentDescription = tab.label,
                         tint = if (active) Gold else TextLo,
@@ -217,7 +233,7 @@ private fun NorthstarBottomNav(
                     if (active) {
                         Box(
                             Modifier
-                                .padding(top = 31.dp)
+                                .align(Alignment.BottomCenter)
                                 .size(4.dp)
                                 .clip(CircleShape)
                                 .background(Gold)

@@ -15,6 +15,8 @@ lifecycleViewmodelCompose = "2.8.7"
 coroutinesPlayServices = "1.8.1"
 credentials = "1.3.0"
 googleid = "1.1.1"
+mapsCompose = "6.4.1"
+playServicesMaps = "19.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -41,6 +43,8 @@ androidx-credentials = { group = "androidx.credentials", name = "credentials", v
 androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 google-identity-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
+maps-compose = { group = "com.google.maps.android", name = "maps-compose", version.ref = "mapsCompose" }
+play-services-maps = { group = "com.google.android.gms", name = "play-services-maps", version.ref = "playServicesMaps" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

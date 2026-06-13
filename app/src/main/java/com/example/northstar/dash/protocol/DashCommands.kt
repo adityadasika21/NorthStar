@@ -24,7 +24,7 @@ object DashCommands {
     fun initialBurst(hostname: String): List<ByteArray> = listOf(
         authRequest(),
         hostnameAnnounce(hostname),
-        "0018000200000000020100054b31472002060600030e3334".hexToBytes(),
+        timeSync(),
         "0016000200000000020100054b314720030557000155".hexToBytes(),
         "0016000200000000020100054b3147200405560001aa".hexToBytes(),
         "0016000200000000020100054b3147200506050001aa".hexToBytes(),
@@ -33,6 +33,25 @@ object DashCommands {
         ("0044000a00000000020100054b3147200906080001ff060300015506040001a2060f0001aa" +
          "0601000101054c000113052d00020000051b0001190521000132054d000132").hexToBytes(),
     )
+
+    /**
+     * 06 06 — time-of-day sync (hour, minute, second). The dash has no clock source
+     * of its own: it shows whatever the phone last fed it, so the official app keeps
+     * feeding it. better-dash replays a hardcoded capture time (0x0e 0x33 0x34 =
+     * 14:51:52) once, which left the dash clock wrong AND frozen. Build it from the
+     * real clock; DashSession re-sends it every 30 s.
+     */
+    fun timeSync(): ByteArray {
+        val cal = java.util.Calendar.getInstance()
+        return K1GPacket.build(
+            K1GPacket.tlv(
+                0x06, 0x06,
+                cal.get(java.util.Calendar.HOUR_OF_DAY),
+                cal.get(java.util.Calendar.MINUTE),
+                cal.get(java.util.Calendar.SECOND),
+            )
+        )
+    }
 
     /** Bluconnect announce — device name shown on the dash's "Connected to X" screen. */
     fun hostnameAnnounce(hostname: String): ByteArray {
@@ -131,8 +150,23 @@ object DashCommands {
      * Full 0x007E route card. Must be sent BEFORE z2 (sets the destination the
      * dash needs to open its decoder), then re-sent at ~1 Hz while streaming
      * or the dash's destination watchdog tears the decoder down after ~15 s.
+     *
+     * The template is a capture of a REAL French route, so its nav fields carry
+     * that ride's values — total distance 0x004F (79 km-tenths = "7.9 km"),
+     * glyph 0x3C, ETA "03:03". Re-sending them unpatched at 1 Hz stomps the live
+     * figures from [activeNavPacket]. Pass the live values to overwrite them
+     * (field meanings per better-dash: 0502 glyph t3c.g, 0506 unit t3c.j,
+     * 0508 ETA HH:MM ASCII, 0509 total t3c.q, 0546 total unit t3c.r).
      */
-    fun routeCard(title: String, projectionOn: Boolean = false): ByteArray {
+    fun routeCard(
+        title: String,
+        projectionOn: Boolean = false,
+        maneuver: Int? = null,
+        primaryUnit: Int? = null,
+        totalDist: Int? = null,
+        totalUnit: Int? = null,
+        etaHHMM: String? = null,   // 4 ASCII digits, e.g. "1845"
+    ): ByteArray {
         val rt = title.toByteArray(Charsets.UTF_8).let {
             if (it.size > 60) it.copyOf(60) else it
         } + 0x00.toByte()
@@ -147,12 +181,78 @@ object DashCommands {
         out.write(navSuffix)
 
         val bytes = out.toByteArray()
-        // Patch projection flag: byte after marker 06 05 00 01
-        val m = indexOf(bytes, byteArrayOf(0x06, 0x05, 0x00, 0x01), fromEnd = true)
-        if (m >= 0 && m + 4 < bytes.size) bytes[m + 4] = if (projectionOn) 0x55 else 0xAA.toByte()
+        // All patched fields live in the suffix (after the title), so search from
+        // the end — the title text can never collide with a marker that way.
+        fun patch1(t: Int, s: Int, v: Int) {
+            val m = indexOf(bytes, byteArrayOf(t.toByte(), s.toByte(), 0x00, 0x01), fromEnd = true)
+            if (m >= 0 && m + 4 < bytes.size) bytes[m + 4] = (v and 0xFF).toByte()
+        }
+        fun patch2(t: Int, s: Int, v: Int) {
+            val m = indexOf(bytes, byteArrayOf(t.toByte(), s.toByte(), 0x00, 0x02), fromEnd = true)
+            if (m >= 0 && m + 5 < bytes.size) {
+                bytes[m + 4] = ((v shr 8) and 0xFF).toByte()
+                bytes[m + 5] = (v and 0xFF).toByte()
+            }
+        }
+        patch1(0x06, 0x05, if (projectionOn) 0x55 else 0xAA)
+        maneuver?.let { patch1(0x05, 0x02, it) }
+        primaryUnit?.let { patch1(0x05, 0x06, it) }
+        // The template carries the captured French ride's figures (total 0x004F =
+        // "7.9 km", secondary 0x000A). Zero them by DEFAULT so a card sent with no live
+        // route shows 0, not a bogus "7.9 km". Live callers pass real values.
+        patch2(0x05, 0x09, totalDist ?: 0)
+        patch2(0x05, 0x05, 0)                       // stale secondary distance → 0
+        totalUnit?.let { patch1(0x05, 0x46, it) }
+        if (etaHHMM != null && etaHHMM.length == 4) {
+            val m = indexOf(bytes, byteArrayOf(0x05, 0x08, 0x00, 0x04), fromEnd = true)
+            if (m >= 0 && m + 8 < bytes.size) {
+                for (i in 0 until 4) bytes[m + 4 + i] = etaHHMM[i].code.toByte()
+            }
+        }
         bytes[0] = ((bytes.size shr 8) and 0xFF).toByte()
         bytes[1] = (bytes.size and 0xFF).toByte()
         return bytes
+    }
+
+    // ── Active navigation info (0x007E-family, ~1 Hz while guiding) ───────
+    // Ported from better-dash build_active_nav_packet. Drives the dash's
+    // instruction bubble: primary maneuver glyph + distance-to-turn + total.
+    const val NAV_MANEUVER_CONTINUE = 0x0B
+    const val NAV_UNIT_KM_TENTHS = 0x10   // distance field = km × 10
+    const val NAV_UNIT_METERS    = 0x30
+    private const val NAV_HDR = "00000000020100054B31472000"
+
+    /**
+     * @param maneuver  dash glyph code (0x0B = continue; others unverified)
+     * @param primaryDistM  distance to next turn (metres if [primaryUnit]=METERS,
+     *                      or km×10 if KM_TENTHS)
+     * @param totalDistM    remaining distance, same unit convention via [totalUnit]
+     */
+    fun activeNavPacket(
+        maneuver: Int = NAV_MANEUVER_CONTINUE,
+        primaryDist: Int = 500,
+        primaryUnit: Int = NAV_UNIT_METERS,
+        totalDist: Int = 500,
+        totalUnit: Int = NAV_UNIT_METERS,
+        projectionOn: Boolean = true,
+    ): ByteArray {
+        fun u16(v: Int) = "%04X".format(v and 0xFFFF)
+        fun u8(v: Int) = "%02X".format(v and 0xFF)
+        val tlvs = StringBuilder()
+        tlvs.append("05020001").append(u8(maneuver))      // primary maneuver
+        tlvs.append("05040002").append(u16(primaryDist))  // primary distance
+        tlvs.append("05060001").append(u8(primaryUnit))   // primary unit
+        tlvs.append("05090002").append(u16(totalDist))    // total distance
+        tlvs.append("05460001").append(u8(totalUnit))     // total unit
+        tlvs.append("050A000155")                          // decimal separator = '.'
+        tlvs.append("06050001").append(if (projectionOn) "55" else "AA") // projection flag
+        tlvs.append("060D0001AA")                          // decimal format off
+
+        val segCount = 8 + 1
+        val innerHex = "%04X".format(segCount) + NAV_HDR + tlvs.toString()
+        val innerBytes = innerHex.length / 2
+        val outerLen = innerBytes + 2
+        return ("%04X".format(outerLen) + innerHex).hexToBytes()
     }
 
     private fun indexOf(haystack: ByteArray, needle: ByteArray, fromEnd: Boolean = false): Int {

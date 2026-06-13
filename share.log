@@ -1,0 +1,13 @@
+--------- beginning of main
+06-12 07:57:23.425 D/LocationParser(12510): parse(): https://maps.app.goo.gl/HUEbfPhwjw9ddAyv9
+06-12 07:57:23.425 D/LocationParser(12510): parse() → name='Loading…' coords=null short=true url=https://maps.app.goo.gl/HUEbfPhwjw9ddAyv9
+06-12 07:57:23.838 D/LocationParser(12510): hop 0: 302 https://www.google.com/maps/place/Third+Wave+Coffee,+Gate+Number+6,+Retail+Ground+Floor,+M
+06-12 07:57:24.386 D/LocationParser(12510): hop 1: 200 
+06-12 07:57:24.515 I/LocationParser(12510): resolve() → coords=null name=Third Wave Coffee, Gate Number 6, Retail Ground Floor, Magma Block Circle 20, Knowledge City, Salarpuria Sattva, Raidurg Village, Serilingampalle (M), Hyderabad, Telangana 500032 finalUrl=https://www.google.com/maps/place/Third+Wave+Coffee,+Gate+Number+6,+Retail+Ground+Floor,+Magma+Block+Circle+20,+Knowledg
+06-12 08:00:01.960 D/LocationParser(23966): parse(): https://maps.app.goo.gl/xQR3tmvTQ5xXaoxcA
+06-12 08:00:01.961 D/LocationParser(23966): parse() → name='Loading…' coords=null short=true url=https://maps.app.goo.gl/xQR3tmvTQ5xXaoxcA
+06-12 08:00:03.399 D/LocationParser(23966): hop 0: 302 https://www.google.com/maps/place/Third+Wave+Coffee,+Gate+Number+6,+Retail+Ground+Floor,+M
+06-12 08:00:03.925 D/LocationParser(23966): hop 1: 200 
+06-12 08:00:04.088 I/LocationParser(23966): resolve() → coords=null name=Third Wave Coffee, Gate Number 6, Retail Ground Floor, Magma Block Circle 20, Knowledge City, Salarpuria Sattva, Raidurg Village, Serilingampalle (M), Hyderabad, Telangana 500032 finalUrl=https://www.google.com/maps/place/Third+Wave+Coffee,+Gate+Number+6,+Retail+Ground+Floor,+Magma+Block+Circle+20,+Knowledg
+06-12 08:00:04.505 I/RouteViewModel(23966): Geocoded 'Third Wave Coffee, Gate Number 6, Retail Ground Floor, Magma Block Circle 20, Knowledge City, Salarpuria Sattva, Raidurg Village, Serilingampalle (M), Hyderabad, Telangana 500032' → 17.4330773,78.3823398
+06-12 08:00:09.579 I/DashViewModel(23966): Route ready: 633 pts, 26921 m

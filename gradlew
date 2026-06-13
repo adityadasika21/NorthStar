@@ -248,4 +248,21 @@ eval "set -- $(
         tr '\n' ' '
     )" '"$@"'
 
+# Ensure all init scripts passed with -I exist to prevent Gradle from failing early
+# This fixes a recurring issue with Android Studio's ijMapper scripts in /tmp
+_prev_arg=""
+for _arg in "$@"; do
+    if [ "$_prev_arg" = "-I" ] || [ "$_prev_arg" = "--init-script" ]; then
+        case "$_arg" in
+            /tmp/*.gradle)
+                if [ ! -f "$_arg" ]; then
+                    touch "$_arg" 2>/dev/null
+                fi
+                ;;
+        esac
+    fi
+    _prev_arg="$_arg"
+done
+
 exec "$JAVACMD" "$@"
+

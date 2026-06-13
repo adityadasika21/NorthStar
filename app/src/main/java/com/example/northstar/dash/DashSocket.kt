@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Every control packet gets the rolling K1G seq byte patched on send.
  */
-class DashSocket : AutoCloseable {
+class DashSocket(private val network: android.net.Network? = null) : AutoCloseable {
     companion object {
         const val DASH_IP    = "192.168.1.1"
         const val BROADCAST  = "192.168.1.255"
@@ -51,13 +51,15 @@ class DashSocket : AutoCloseable {
                 it.reuseAddress = true
                 it.broadcast = true
                 it.bind(InetSocketAddress(CTRL_PORT))
+                network?.bindSocket(it)
             }
             rx = DatagramSocket(null).also {
                 it.reuseAddress = true
                 it.soTimeout = RECV_TIMEOUT_MS
                 it.bind(InetSocketAddress(RX_PORT))
+                network?.bindSocket(it)
             }
-            rtp = DatagramSocket()
+            rtp = DatagramSocket().also { network?.bindSocket(it) }
             Log.i(TAG, "Sockets open — TX :$CTRL_PORT→$BROADCAST:$CTRL_PORT (broadcast), RX :$RX_PORT, RTP→$DASH_IP:$RTP_PORT")
             txSocket  = tx
             rxSocket  = rx

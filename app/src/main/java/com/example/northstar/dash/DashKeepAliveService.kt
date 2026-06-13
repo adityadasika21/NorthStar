@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -67,7 +68,18 @@ class DashKeepAliveService : Service() {
 
     private fun startForegroundLocks() {
         createChannel()
-        startForeground(NOTIF_ID, buildNotification())
+        // The LOCATION type is what lets GPS keep updating with the screen off —
+        // without it Android 14+ freezes location for backgrounded apps and the
+        // rider marker sticks at its first fix.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+            )
+        } else {
+            startForeground(NOTIF_ID, buildNotification())
+        }
         acquireLocks()
         Log.i(TAG, "Foreground service up — wake+wifi locks held")
     }
@@ -79,12 +91,13 @@ class DashKeepAliveService : Service() {
             acquire()
         }
 
+        // HIGH_PERF keeps the link awake (prevents WiFi power-save from dropping the
+        // WifiNetworkSpecifier connection) at lower power than LOW_LATENCY. 4 fps /
+        // ~200 kbps doesn't need low-latency mode's extra power draw.
+        @Suppress("DEPRECATION")
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-            WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-        else
-            @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
-        wifiLock = wm.createWifiLock(mode, "northstar:dash").apply {
+        @Suppress("DEPRECATION")
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "northstar:dash").apply {
             setReferenceCounted(false)
             acquire()
         }

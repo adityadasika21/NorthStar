@@ -1,4 +1,4 @@
-# Northstar
+    # Northstar
 
 Personal Android companion app for a **Royal Enfield Himalayan 450** motorcycle.
 Single user (just me), Android-only, targeting a **Nothing Phone 3**. Not a

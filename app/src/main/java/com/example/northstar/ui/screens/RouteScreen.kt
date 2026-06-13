@@ -61,7 +61,16 @@ fun RouteScreen(
                 .fillMaxHeight(0.46f)
                 .background(MapBase),
         ) {
-            RouteMapPreview()
+            // Real Google Maps preview — destination pin + route line.
+            NorthstarMap(
+                riderLat = null,
+                riderLng = null,
+                dest = dest?.let { d -> if (d.lat != null && d.lng != null) d.lat to d.lng else null },
+                routePoints = routeState.route?.geometry.orEmpty(),
+                hasLocationPermission = true,
+                fitRoute = true,
+                modifier = Modifier.fillMaxSize(),
+            )
 
             // Top bar overlay
             Row(
@@ -139,9 +148,15 @@ fun RouteScreen(
 
             Spacer(Modifier.height(18.dp))
 
-            // Route stats
+            // Route stats (real values once routing completes)
+            val routing = routeState.routing
+            val statsList = listOf(
+                Triple(if (routing) "…" else (routeState.distanceText ?: "—"), "", "Distance"),
+                Triple(if (routing) "…" else (routeState.durationText ?: "—"), "", "Duration"),
+                Triple(if (routing) "…" else (routeState.etaText ?: "—"), "", "Arrive"),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf(Triple("218", "km", "Distance"), Triple("4:50", "hrs", "Duration"), Triple("13:32", "ETA", "Arrive")).forEach { (v, u, k) ->
+                statsList.forEach { (v, u, k) ->
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -205,65 +220,22 @@ fun RouteScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
             )
 
+            val canStart = dest?.lat != null && dest.lng != null && !routeState.isResolving
             NorthstarBtn(
                 label = when {
-                    sent                   -> "Sent — opening dash…"
+                    sent                   -> "Starting navigation…"
                     routeState.isResolving -> "Resolving destination…"
-                    else                   -> "Send to Dash"
+                    routeState.routing     -> "Finding route…"
+                    else                   -> "Start navigation"
                 },
                 onClick = { sent = true },
-                icon = if (sent) NorthstarIcons.Check else NorthstarIcons.Share,
+                icon = if (sent) NorthstarIcons.Check else NorthstarIcons.Navi,
                 variant = if (sent) BtnVariant.Secondary else BtnVariant.Primary,
                 size = BtnSize.Lg,
-                enabled = !sent && !routeState.isResolving,
+                enabled = !sent && canStart,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
 }
 
-@Composable
-private fun RouteMapPreview() {
-    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-
-        // Background gradient
-        drawRect(
-            brush = Brush.verticalGradient(listOf(MapBase, Color(0xFF0B1012))),
-        )
-
-        // Route path (gold)
-        val routePath = androidx.compose.ui.graphics.Path().apply {
-            moveTo(w * 0.22f, h * 0.81f)
-            cubicTo(w * 0.31f, h * 0.70f, w * 0.23f, h * 0.59f, w * 0.38f, h * 0.51f)
-            cubicTo(w * 0.54f, h * 0.43f, w * 0.46f, h * 0.31f, w * 0.64f, h * 0.23f)
-            cubicTo(w * 0.74f, h * 0.18f, w * 0.77f, h * 0.12f, w * 0.76f, h * 0.08f)
-        }
-
-        drawPath(routePath, Gold, style = androidx.compose.ui.graphics.drawscope.Stroke(
-            width = 6f,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round,
-        ))
-
-        // Dashed white overlay
-        drawPath(routePath,
-            color = Color(0x8CFFF4D8),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                width = 1.6f,
-                cap = StrokeCap.Round,
-                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(2f, 8f)),
-            )
-        )
-
-        // Start dot
-        drawCircle(Color(0xFF0E1416), radius = 9f, center = Offset(w * 0.22f, h * 0.81f))
-        drawCircle(Gold, radius = 9f, center = Offset(w * 0.22f, h * 0.81f), style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
-        drawCircle(Gold, radius = 3.5f, center = Offset(w * 0.22f, h * 0.81f))
-
-        // End pin (gold circle)
-        drawCircle(Gold, radius = 13f, center = Offset(w * 0.76f, h * 0.08f))
-        drawCircle(Color(0xFF1A1402), radius = 5f, center = Offset(w * 0.76f, h * 0.08f))
-    }
-}

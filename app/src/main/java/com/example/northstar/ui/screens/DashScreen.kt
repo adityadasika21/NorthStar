@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
@@ -96,6 +97,17 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
 
     val streaming = ui.stage == ConnStage.STREAMING
 
+    // Auto-connect on opening the Dash screen, so the rider doesn't tap "Connect" every
+    // ride — just open the app. Fires once; if the dash is off it errors out quietly and
+    // the rider can retry. (Needs permissions already granted from a prior run.)
+    var autoConnectTried by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!autoConnectTried && ui.stage == ConnStage.OFFLINE && hasEssentialPermissions()) {
+            autoConnectTried = true
+            vm.connect()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -107,12 +119,20 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
             eyebrow = "What the rider sees",
             title = "Dash view",
             trailing = {
-                when (ui.stage) {
-                    ConnStage.STREAMING -> NorthstarChip("LIVE", ChipTone.Gold, dot = true)
-                    ConnStage.WIFI,
-                    ConnStage.AUTH      -> NorthstarChip("Connecting…", ChipTone.Neutral)
-                    ConnStage.ERROR     -> NorthstarChip("Error", ChipTone.Alert)
-                    ConnStage.OFFLINE   -> NorthstarChip("Offline", ChipTone.Off)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (streaming && ui.thermal != "OK") {
+                        NorthstarChip(
+                            ui.thermal,
+                            if (ui.thermal == "Warm") ChipTone.Warn else ChipTone.Alert,
+                        )
+                    }
+                    when (ui.stage) {
+                        ConnStage.STREAMING -> NorthstarChip("LIVE", ChipTone.Gold, dot = true)
+                        ConnStage.WIFI,
+                        ConnStage.AUTH      -> NorthstarChip("Connecting…", ChipTone.Neutral)
+                        ConnStage.ERROR     -> NorthstarChip("Error", ChipTone.Alert)
+                        ConnStage.OFFLINE   -> NorthstarChip("Offline", ChipTone.Off)
+                    }
                 }
             },
         )
@@ -194,35 +214,61 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
             if (streaming) {
                 Box(
                     Modifier
-                        .size(340.dp)
+                        .size(300.dp)
                         .clip(RoundedCornerShape(percent = 50))
                         .background(Brush.radialGradient(listOf(GoldGlow, Color.Transparent), radius = 200f))
                 )
             }
-            CircularDash(
-                size = 272.dp,
-                pan = pan,
-                zoom = (1f + (ui.mapZoom - 14) * 0.2f).coerceIn(0.7f, 2.4f),
-                distance = ui.remainingKm?.let {
-                    if (it >= 10) "%.0f km".format(it) else "%.1f km".format(it)
-                } ?: "—",
-                street = ui.destinationName ?: "No destination",
-                live = streaming,
-            )
+            // Real Google Maps, clipped to the round Tripper shape.
+            Box(
+                modifier = Modifier
+                    .size(272.dp)
+                    .clip(CircleShape)
+                    .border(6.dp, Color(0xFF0D0F10), CircleShape)
+                    .border(2.dp, Line2, CircleShape),
+            ) {
+                NorthstarMap(
+                    riderLat = ui.riderLat,
+                    riderLng = ui.riderLng,
+                    dest = ui.destLatLng,
+                    routePoints = ui.routePoints,
+                    hasLocationPermission = hasEssentialPermissions(),
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         Spacer(Modifier.height(14.dp))
 
-        // Live info strip
+        // Next-turn banner (real turn-by-turn from the routing engine)
+        ui.maneuver?.let { mv ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(if (ui.offRoute) Color(0x33D8853E) else GoldTint)
+                    .border(1.dp, if (ui.offRoute) Warn else GoldTint2, RoundedCornerShape(13.dp))
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+            ) {
+                Icon(NorthstarIcons.Navi, null, tint = if (ui.offRoute) Warn else Gold, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(11.dp))
+                Text(
+                    if (ui.offRoute) "Off route — rerouting…" else mv,
+                    color = TextHi, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+
+        // Live info strip — real remaining distance, ETA, zoom
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf(
-                Triple(if (ui.hasGps) "GPS" else "—", "", "Position"),
                 Triple(
-                    ui.remainingKm?.let {
-                        if (it >= 10) "%.0f".format(it) else "%.1f".format(it)
-                    } ?: "—",
+                    ui.remainingKm?.let { if (it >= 10) "%.0f".format(it) else "%.1f".format(it) } ?: "—",
                     if (ui.remainingKm != null) "km" else "", "Remaining",
                 ),
+                Triple(ui.etaMinutes?.toString() ?: "—", if (ui.etaMinutes != null) "min" else "", "ETA"),
                 Triple("z${ui.mapZoom}", "", "Zoom"),
             ).forEach { (v, u, k) ->
                 Column(
@@ -270,6 +316,30 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
             NorthstarToggle(on = adjustMode, onChange = { adjustMode = it })
         }
 
+        Spacer(Modifier.height(10.dp))
+
+        // Heading-up toggle (rotate map to travel direction)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Surf1)
+                .border(1.dp, Line, RoundedCornerShape(14.dp))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(NorthstarIcons.Navi, null, tint = if (ui.headingUp) Gold else TextMid, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(11.dp))
+                Column {
+                    Text("Heading-up map", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily)
+                    Text(if (ui.headingUp) "Rotates to travel direction" else "North-up", color = TextLo, fontSize = 11.5.sp, modifier = Modifier.padding(top = 1.dp))
+                }
+            }
+            NorthstarToggle(on = ui.headingUp, onChange = { vm.toggleHeadingUp() })
+        }
+
         Spacer(Modifier.height(16.dp))
 
         // Controls: joystick + zoom (drive the actual dash map)
@@ -304,6 +374,19 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                 NorthstarIconBtn(NorthstarIcons.Minus, onClick = { vm.zoomOut() }, size = 52.dp)
                 NorthstarIconBtn(NorthstarIcons.Recenter, onClick = { vm.recenter(); pan = Offset.Zero }, size = 52.dp, active = true)
             }
+        }
+
+        // Exit navigation → free roam (keeps streaming, just drops the route)
+        if (streaming && ui.destinationName != null) {
+            Spacer(Modifier.height(16.dp))
+            NorthstarBtn(
+                "Exit navigation",
+                onClick = { vm.exitNavigation() },
+                icon = NorthstarIcons.Navi,
+                variant = BtnVariant.Ghost,
+                size = BtnSize.Md,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         // Disconnect button when streaming

@@ -46,13 +46,54 @@ class DashSession(private val scope: CoroutineScope) {
     private var projHbJob: Job? = null
     private var routeCardJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var navInfoJob: Job? = null
+
+    // Live nav-info pushed to the dash bubble at ~1 Hz (set by NavEngine output).
+    @Volatile private var navManeuver = DashCommands.NAV_MANEUVER_CONTINUE
+    @Volatile private var navPrimaryDist = 0
+    @Volatile private var navPrimaryUnit = DashCommands.NAV_UNIT_METERS
+    @Volatile private var navTotalDist = 0
+    @Volatile private var navTotalUnit = DashCommands.NAV_UNIT_METERS
+    @Volatile private var navEta: String? = null
+    @Volatile private var navActive = false
+
+    /** Push the latest turn-by-turn figures; sent to the dash at 1 Hz. */
+    fun updateNavInfo(
+        maneuver: Int, primaryDist: Int, primaryUnit: Int,
+        totalDist: Int, totalUnit: Int, etaHHMM: String? = null,
+    ) {
+        navManeuver = maneuver
+        navPrimaryDist = primaryDist
+        navPrimaryUnit = primaryUnit
+        navTotalDist = totalDist
+        navTotalUnit = totalUnit
+        navEta = etaHHMM
+        navActive = true
+    }
+
+    /**
+     * Route card with the LIVE nav figures patched in. The template's captured
+     * values (7.9 km / glyph 0x3C / ETA 03:03) must never reach the dash once
+     * real guidance is running — the card repeats at 1 Hz and would stomp the
+     * activeNavPacket numbers every second.
+     */
+    private fun liveRouteCard(projectionOn: Boolean): ByteArray =
+        if (navActive) DashCommands.routeCard(
+            destinationName, projectionOn,
+            maneuver = navManeuver,
+            primaryUnit = navPrimaryUnit,
+            totalDist = navTotalDist,
+            totalUnit = navTotalUnit,
+            etaHHMM = navEta,
+        )
+        else DashCommands.routeCard(destinationName, projectionOn)
 
     // ── Public API ────────────────────────────────────────────────────────
 
-    fun connect(ssid: String) {
+    fun connect(ssid: String, network: android.net.Network? = null) {
         if (_state.value != DashState.IDLE && _state.value != DashState.ERROR) return
-        Log.i(TAG, "connect() — ssid='$ssid'")
-        scope.launch(Dispatchers.IO) { runSession(ssid) }
+        Log.i(TAG, "connect() — ssid='$ssid' network=$network")
+        scope.launch(Dispatchers.IO) { runSession(ssid, network) }
     }
 
     fun startStreaming() {
@@ -61,21 +102,24 @@ class DashSession(private val scope: CoroutineScope) {
         // Projection-on route card + faster keep-alive begin now
         launchProjectionHeartbeat()
         launchRouteCardKeepAlive()
+        launchNavInfo()
     }
 
     fun sendRtp(packet: ByteArray) { socket?.sendRtp(packet) }
 
     fun updateRouteCard(name: String) {
         destinationName = name.ifBlank { "Northstar" }
+        navActive = false   // new destination — old figures are stale until the next updateNavInfo
         if (_state.value == DashState.READY || _state.value == DashState.STREAMING) {
             scope.launch(Dispatchers.IO) {
-                socket?.send(DashCommands.routeCard(destinationName, projectionOn = true))
+                socket?.send(liveRouteCard(projectionOn = true))
             }
         }
     }
 
     fun disconnect() {
-        rxJob?.cancel(); projHbJob?.cancel(); routeCardJob?.cancel(); heartbeatJob?.cancel()
+        rxJob?.cancel(); projHbJob?.cancel(); routeCardJob?.cancel(); heartbeatJob?.cancel(); navInfoJob?.cancel()
+        navActive = false
         socket?.let {
             runCatching { it.send(DashCommands.projectionStop()) }
             runCatching { it.send(DashCommands.projectionOff()) }
@@ -88,11 +132,11 @@ class DashSession(private val scope: CoroutineScope) {
 
     // ── Internal ──────────────────────────────────────────────────────────
 
-    private suspend fun runSession(ssid: String) {
+    private suspend fun runSession(ssid: String, network: android.net.Network? = null) {
         try {
             _state.value = DashState.CONNECTING
             val sock = try {
-                DashSocket().also { socket = it }
+                DashSocket(network).also { socket = it }
             } catch (e: java.net.BindException) {
                 fail("Port ${DashSocket.RX_PORT}/${DashSocket.CTRL_PORT} in use (${e.message})")
                 return
@@ -165,6 +209,15 @@ class DashSession(private val scope: CoroutineScope) {
 
     private fun dispatchIncoming(pkt: ByteArray, sock: DashSocket) {
         val tlvs = K1GPacket.parseIncoming(pkt)
+        // Dump the full raw packet for anything that ISN'T just the per-frame decode
+        // acks (09 06 55 / 09 04 55) — those fire ~8×/s and would drown the log. This
+        // captures joystick events, telemetry, and any unknown TLV in full hex so a
+        // single `adb logcat -s DashSession` session is enough to reverse the protocol.
+        val onlyAcks = tlvs.isNotEmpty() && tlvs.all {
+            it.type == 0x09 && (it.sub == 0x06 || it.sub == 0x04) &&
+                it.value.firstOrNull()?.toInt() == 0x55
+        }
+        if (!onlyAcks) Log.i(TAG, "RX RAW (${pkt.size}B): ${pkt.toHexFull()}")
         for (tlv in tlvs) {
             // ── Auth (07 xx) ──
             if (tlv.type == 0x07) {
@@ -201,17 +254,47 @@ class DashSession(private val scope: CoroutineScope) {
             // ── 09 00: button / joystick event → echo ack + notify UI ──
             if (tlv.type == 0x09 && tlv.sub == 0x00 && tlv.value.isNotEmpty()) {
                 val btn = tlv.value.last()  // 0900 0001 <code>
+                Log.i(TAG, "JOYSTICK 09 00 → code 0x${(btn.toInt() and 0xFF).toString(16).uppercase()}  full=${tlv.value.toHexFull()}")
                 sock.send(DashCommands.buttonAck(btn))
                 scope.launch(Dispatchers.Main) { onButton?.invoke(btn) }
+                continue
             }
+            // ── 0F: vehicle-secure telemetry (AES-256-CBC under the session key,
+            //    IV = first 16 bytes). This is the dash's instrument-cluster data
+            //    (likely trip/odo/fuel/speed/temp). The better-dash reference only
+            //    logs these as ciphertext — we actually DECRYPT with our session key
+            //    and log the plaintext for field-mapping (P1b). It arrives over our
+            //    own session, so plain `adb logcat -s DashSession` captures it — no
+            //    root, no monitor mode. ──
+            if (tlv.type == 0x0F) {
+                val key = auth?.sessionKey
+                val plain = key?.let { aesDecryptCbc(tlv.value, it) }
+                Log.i(TAG, "DASH TELEMETRY 0F sub=0x%02X enc(%dB)=%s  dec=%s".format(
+                    tlv.sub, tlv.value.size, tlv.value.toHexFull(),
+                    plain?.toHexFull() ?: "<key=${key != null}; decrypt failed>"))
+                continue
+            }
+            // ── 0C xx: dash → app telemetry (trip/odo/fuel/temp — P1b) ──
+            if (tlv.type == 0x0C) {
+                Log.i(TAG, "DASH TELEMETRY 0C sub=0x%02X (%dB) val=%s"
+                    .format(tlv.sub, tlv.value.size, tlv.value.toHexFull()))
+                continue
+            }
+            // Log every OTHER incoming event (e.g. joystick in nav view, or the dash's
+            // 'exit navigation' selection) in FULL so its TLV can be identified + mapped.
+            Log.i(TAG, "DASH EVENT type=0x%02X sub=0x%02X (%dB) val=%s"
+                .format(tlv.type, tlv.sub, tlv.value.size, tlv.value.toHexFull()))
         }
     }
 
     private fun launchStatusHeartbeat(sock: DashSocket) {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch(Dispatchers.IO) {
+            var n = 0
             while (isActive) {
                 runCatching { sock.send(DashCommands.heartbeat()) }
+                // Keep the dash clock correct — it only shows what the phone feeds it.
+                if (n++ % 30 == 0) runCatching { sock.send(DashCommands.timeSync()) }
                 delay(1_000)
             }
         }
@@ -231,7 +314,27 @@ class DashSession(private val scope: CoroutineScope) {
         routeCardJob?.cancel()
         routeCardJob = scope.launch(Dispatchers.IO) {
             while (isActive && _state.value == DashState.STREAMING) {
-                socket?.send(DashCommands.routeCard(destinationName, projectionOn = true))
+                socket?.send(liveRouteCard(projectionOn = true))
+                delay(ROUTE_CARD_MS)
+            }
+        }
+    }
+
+    private fun launchNavInfo() {
+        navInfoJob?.cancel()
+        navInfoJob = scope.launch(Dispatchers.IO) {
+            while (isActive && _state.value == DashState.STREAMING) {
+                if (navActive) {
+                    socket?.send(
+                        DashCommands.activeNavPacket(
+                            maneuver = navManeuver,
+                            primaryDist = navPrimaryDist,
+                            primaryUnit = navPrimaryUnit,
+                            totalDist = navTotalDist,
+                            totalUnit = navTotalUnit,
+                        )
+                    )
+                }
                 delay(ROUTE_CARD_MS)
             }
         }
@@ -244,4 +347,20 @@ class DashSession(private val scope: CoroutineScope) {
         _state.value = DashState.ERROR
         onError?.invoke(msg)
     }
+
+    /** Full hex dump (no truncation) — used for protocol-capture logging. */
+    private fun ByteArray.toHexFull(): String =
+        joinToString(" ") { "%02X".format(it) }
+
+    /** AES-256-CBC/PKCS5 decrypt of an [iv(16) ‖ ciphertext] blob under the session key. */
+    private fun aesDecryptCbc(ivAndCt: ByteArray, key: ByteArray): ByteArray? = runCatching {
+        if (ivAndCt.size <= 16) return null
+        val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(
+            javax.crypto.Cipher.DECRYPT_MODE,
+            javax.crypto.spec.SecretKeySpec(key, "AES"),
+            javax.crypto.spec.IvParameterSpec(ivAndCt.copyOfRange(0, 16)),
+        )
+        cipher.doFinal(ivAndCt.copyOfRange(16, ivAndCt.size))
+    }.getOrNull()
 }

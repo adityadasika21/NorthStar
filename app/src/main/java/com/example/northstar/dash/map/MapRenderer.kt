@@ -69,8 +69,8 @@ class MapRenderer(private val tiles: TileProvider) {
     // ETA pill (drawn in screen space, bottom-centre, inside the round safe zone)
     private val etaBgPaint     = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(232, 20, 22, 26) }
     private val etaBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(46, 255, 255, 255); style = Paint.Style.STROKE; strokeWidth = 1.5f }
-    private val etaBigPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(126, 217, 87); textSize = 27f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }   // Google-nav green
-    private val etaSmallPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(196, 201, 208); textSize = 16f; textAlign = Paint.Align.CENTER }
+    private val etaBigPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(126, 217, 87); textSize = 20f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }   // Google-nav green
+    private val etaSmallPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(196, 201, 208); textSize = 12f; textAlign = Paint.Align.CENTER }
 
     // Reused across frames
     private val routePath = Path()
@@ -185,7 +185,7 @@ class MapRenderer(private val tiles: TileProvider) {
         // arrival clock) — distance lives on the dash's own widget.
         f.etaPrimary?.let { primary ->
             val secondary = f.etaSecondary
-            val padH = 24f; val padV = 11f; val gap = 2f
+            val padH = 18f; val padV = 8f; val gap = 1f
             val bigFm = etaBigPaint.fontMetrics
             val smallFm = etaSmallPaint.fontMetrics
             val bigH = bigFm.descent - bigFm.ascent

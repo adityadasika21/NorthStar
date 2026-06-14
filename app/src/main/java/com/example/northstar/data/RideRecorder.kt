@@ -30,7 +30,6 @@ class RideRecorder {
 
     fun add(lat: Double, lng: Double, speedMps: Float, timeMs: Long) {
         if (!recording) return
-        if (speedMps > maxSpeed) maxSpeed = speedMps.toDouble()
         val p = GeoPoint(lat, lng)
         val prev = last
         if (prev == null) {
@@ -39,6 +38,8 @@ class RideRecorder {
         val step = GeoPoint.distMeters(prev, p)
         if (step < MIN_MOVE_M) return   // thin out jitter / stationary noise
         distanceM += step
+        // Only count max speed on genuine movement, so parked GPS speed spikes don't inflate it.
+        if (speedMps > maxSpeed) maxSpeed = speedMps.toDouble()
         points.add(p); last = p; lastMs = timeMs
     }
 

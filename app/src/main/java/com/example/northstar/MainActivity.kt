@@ -18,6 +18,7 @@ import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
     private val routeViewModel: RouteViewModel by viewModels()
+    private var authListener: FirebaseAuth.AuthStateListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,9 +29,9 @@ class MainActivity : ComponentActivity() {
         // otherwise the app runs fully local with no sync.
         val sync = SyncRepository.get(applicationContext)
         if (com.example.northstar.data.FirebaseGate.isConfigured(applicationContext)) {
-            FirebaseAuth.getInstance().addAuthStateListener { fa ->
+            authListener = FirebaseAuth.AuthStateListener { fa ->
                 if (fa.currentUser != null) sync.startSync() else sync.stopSync()
-            }
+            }.also { FirebaseAuth.getInstance().addAuthStateListener(it) }
         }
 
         // Maintenance reminders on app open (fires even if the Garage screen is never opened).
@@ -53,6 +54,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Don't leak / accumulate the auth listener across Activity recreations.
+        authListener?.let { FirebaseAuth.getInstance().removeAuthStateListener(it) }
+        authListener = null
     }
 
     private fun handleIntent(intent: Intent?) {

@@ -10,12 +10,14 @@ import android.util.Log
 import android.view.Surface
 
 /**
- * MediaCodec H.264 encoder matched to the Tripper Dash stream parameters:
- *   526 × 300, 8 fps, ~320 kbps, Baseline L4.1, 1-second IDR interval.
+ * MediaCodec H.264 encoder for the Tripper Dash stream:
+ *   526 × 300, up to 24 fps, ~1.2 Mbps, Baseline L4.1, 1-second IDR interval.
  *
- * 8 fps (up from 4) makes the map glide instead of slideshowing as the bike moves —
- * still trivial power for a hardware encoder at this tiny resolution, far under the
- * OLED-projection draw this whole project exists to avoid.
+ * [FPS] is the MAX/hint rate — the frame loop feeds ~24 fps while moving (buttery,
+ * Android-Auto-style motion) and throttles to a few fps when stopped to save power.
+ * The hardware encoder auto-timestamps each frame from the input surface, so the
+ * variable feed rate is fine. Tiny resolution → still far under the OLED-projection
+ * draw this whole project exists to avoid.
  *
  * Frames are drawn with Android Canvas via the input Surface's hardware
  * canvas — call [renderFrame] with a draw lambda, then [drain] to pull
@@ -27,8 +29,8 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
     companion object {
         const val WIDTH   = 526
         const val HEIGHT  = 300
-        const val FPS     = 8
-        const val BITRATE = 327_680
+        const val FPS     = 24
+        const val BITRATE = 1_200_000
         private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
         private const val DRAIN_TIMEOUT_US = 10_000L
         private const val TAG = "DashEncoder"

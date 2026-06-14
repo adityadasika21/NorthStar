@@ -42,6 +42,7 @@ class DashSession(private val scope: CoroutineScope) {
 
     @Volatile var destinationName: String = "Northstar"
 
+    private var sessionJob: Job? = null
     private var rxJob: Job? = null
     private var projHbJob: Job? = null
     private var routeCardJob: Job? = null
@@ -93,7 +94,7 @@ class DashSession(private val scope: CoroutineScope) {
     fun connect(ssid: String, network: android.net.Network? = null) {
         if (_state.value != DashState.IDLE && _state.value != DashState.ERROR) return
         Log.i(TAG, "connect() — ssid='$ssid' network=$network")
-        scope.launch(Dispatchers.IO) { runSession(ssid, network) }
+        sessionJob = scope.launch(Dispatchers.IO) { runSession(ssid, network) }
     }
 
     fun startStreaming() {
@@ -118,6 +119,9 @@ class DashSession(private val scope: CoroutineScope) {
     }
 
     fun disconnect() {
+        // Cancel the session coroutine FIRST so it can't race past auth and flip state to
+        // READY after we tear down (which would re-trigger streaming on a dead socket).
+        sessionJob?.cancel(); sessionJob = null
         rxJob?.cancel(); projHbJob?.cancel(); routeCardJob?.cancel(); heartbeatJob?.cancel(); navInfoJob?.cancel()
         navActive = false
         socket?.let {

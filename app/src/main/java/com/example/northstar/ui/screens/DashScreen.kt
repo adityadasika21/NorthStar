@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,7 +101,9 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
     // Auto-connect on opening the Dash screen, so the rider doesn't tap "Connect" every
     // ride — just open the app. Fires once; if the dash is off it errors out quietly and
     // the rider can retry. (Needs permissions already granted from a prior run.)
-    var autoConnectTried by remember { mutableStateOf(false) }
+    // rememberSaveable so a config change (rotation/theme) doesn't reset this and silently
+    // reconnect after the rider deliberately disconnected.
+    var autoConnectTried by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (!autoConnectTried && ui.stage == ConnStage.OFFLINE && hasEssentialPermissions()) {
             autoConnectTried = true

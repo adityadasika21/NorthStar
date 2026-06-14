@@ -35,14 +35,21 @@ object MaintenanceNotifier {
 
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val notified = prefs.getStringSet(KEY_NOTIFIED, emptySet()) ?: emptySet()
-        // Keep the remembered set in step with reality (drop serviced items so they re-remind later).
-        prefs.edit().putStringSet(KEY_NOTIFIED, dueSids).apply()
+        // Drop serviced items from the remembered set so they can remind again next interval,
+        // but keep still-due items we've ALREADY flagged. Crucially, don't mark newly-due items
+        // as notified until we actually post — otherwise a reminder is lost when notifications
+        // are off, and never fires once they're turned on.
+        val stillKnownDue = notified intersect dueSids
 
         val newlyDue = dueSids - notified
-        if (newlyDue.isEmpty()) return   // nothing new crossed the line
+        if (newlyDue.isEmpty()) { prefs.edit().putStringSet(KEY_NOTIFIED, stillKnownDue).apply(); return }
 
         ensureChannel(ctx)
-        if (NotificationManagerCompat.from(ctx).areNotificationsEnabled().not()) return
+        if (NotificationManagerCompat.from(ctx).areNotificationsEnabled().not()) {
+            prefs.edit().putStringSet(KEY_NOTIFIED, stillKnownDue).apply()   // not flagged → can fire later
+            return
+        }
+        prefs.edit().putStringSet(KEY_NOTIFIED, dueSids).apply()   // posting now → remember all due
 
         val (title, text) = buildText(due, odometer)
         val tap = PendingIntent.getActivity(

@@ -26,6 +26,7 @@ import com.example.northstar.dash.video.RtpPacketizer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 enum class ConnStage { OFFLINE, WIFI, AUTH, STREAMING, ERROR }
 
@@ -93,6 +94,28 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var camLng = 0.0
     private var camHdg = 0f
     private var camInit = false
+    private var lastTickNs = 0L          // for framerate-independent smoothing
+
+    // Dead-reckoning: last GPS fix + its velocity, so the camera keeps gliding forward
+    // between the 1 Hz fixes instead of easing to a stop (the "laggy" feel at speed).
+    private var fixLat = 0.0
+    private var fixLng = 0.0
+    private var fixBearing = 0f
+    private var fixSpeed = 0f             // m/s
+    private var fixWallMs = 0L
+    private var lastFixTime = 0L
+
+    // Smoothed rider position shown on the dash frame (locked to the camera centre so the
+    // marker stays put and the map slides under it). null = no GPS.
+    @Volatile private var frameRiderLat: Double? = null
+    @Volatile private var frameRiderLng: Double? = null
+    @Volatile private var camMoving = false   // drives the dynamic frame rate
+
+    // Stable ETA (Google-like): the raw estimate jitters with instantaneous speed, so we
+    // smooth it and only recompute the absolute arrival clock occasionally — no per-frame churn.
+    private var smoothEtaSec = 0.0
+    @Volatile private var etaArrivalMs = 0L
+    private var lastArrivalCalcMs = 0L
 
     // Off-route → reroute, debounced. Now feasible because the app keeps cellular
     // internet while bound to the dash (per-socket binding), so Router can run mid-ride.
@@ -113,6 +136,23 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val MANUAL_IDLE_MS = 8_000L
         private const val FORCE_REDRAW_MS = 2_000L
+        private const val SMOOTH_TAU = 0.28      // camera smoothing time constant (s)
+        private const val FPS_MOVING = 24        // buttery while riding
+        private const val FPS_IDLE = 7           // throttle when stopped (saves power)
+    }
+
+    /** Project a lat/lng forward [distM] metres along [bearingDeg] (great-circle). */
+    private fun project(lat: Double, lng: Double, bearingDeg: Double, distM: Double): Pair<Double, Double> {
+        val r = 6_371_000.0
+        val br = Math.toRadians(bearingDeg)
+        val dr = distM / r
+        val lat1 = Math.toRadians(lat); val lng1 = Math.toRadians(lng)
+        val lat2 = Math.asin(Math.sin(lat1) * Math.cos(dr) + Math.cos(lat1) * Math.sin(dr) * Math.cos(br))
+        val lng2 = lng1 + Math.atan2(
+            Math.sin(br) * Math.sin(dr) * Math.cos(lat1),
+            Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2),
+        )
+        return Math.toDegrees(lat2) to Math.toDegrees(lng2)
     }
 
     init {
@@ -135,7 +175,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                             session.state.value in listOf(DashState.IDLE, DashState.ERROR)
                         ) {
                             delay(1_200)
-                            session.connect(_ui.value.ssid, wifiManager.network)
+                            // Re-check: the user may have hit Disconnect during the delay.
+                            if (userWantsConnection &&
+                                wifiManager.state.value.status == WifiConnStatus.CONNECTED
+                            ) session.connect(_ui.value.ssid, wifiManager.network)
                         }
                     }
                     WifiConnStatus.ERROR -> { _ui.value = _ui.value.copy(errorMessage = ws.error); refreshStage() }
@@ -262,6 +305,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         destLng = lng
         route = null
         progressM = 0.0
+        smoothEtaSec = 0.0; etaArrivalMs = 0L   // fresh ETA for the new route
         voice.resetTrip()   // fresh announcements for the new route
         session.updateRouteCard(name)
         if (lat != null && lng != null) {
@@ -279,6 +323,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         progressM = 0.0
         offRouteSince = 0L
         panX = 0f; panY = 0f; followMode = true
+        smoothEtaSec = 0.0; etaArrivalMs = 0L
         voice.resetTrip()
         lastSignature = ""   // force a redraw with no route line
         _ui.value = _ui.value.copy(
@@ -345,19 +390,22 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         }
         val onEncoded: (ByteArray, Boolean) -> Unit = { annexB, _ ->
             nalProc.process(annexB)
-            _ui.value = _ui.value.copy(frameCount = _ui.value.frameCount + 1)
+            // Atomic update: this runs on the encoder's callback thread, concurrent with the
+            // frame loop's _ui writes — a plain copy() read-modify-write would drop updates.
+            _ui.update { it.copy(frameCount = it.frameCount + 1) }
         }
         encoder?.release()
         encoder = DashEncoder(onEncoded).also { it.prepare() }
 
         frameBitmap = Bitmap.createBitmap(DashEncoder.WIDTH, DashEncoder.HEIGHT, Bitmap.Config.ARGB_8888)
         lastSignature = ""
+        // Fresh camera so it snaps to the first fix instead of gliding from a stale spot.
+        camInit = false; lastTickNs = 0L; lastFixTime = 0L
 
         session.startStreaming()
         location.location.value?.let { tiles.prefetch(it.latitude, it.longitude) }
 
         streamJob = viewModelScope.launch(Dispatchers.Default) {
-            val intervalMs = 1000L / DashEncoder.FPS
             var lastPrefetch = 0L
             var failures = 0
             // The loop must NEVER die silently: the session's heartbeats keep the dash
@@ -396,7 +444,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                         failures = 0
                     }
                 }
-                delay(intervalMs)
+                // Dynamic pacing: buttery while moving, throttled when stopped (power).
+                delay(1000L / (if (camMoving) FPS_MOVING else FPS_IDLE))
             }
         }
     }
@@ -419,7 +468,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         var remainingM: Double? = null
         var etaSec: Double? = null
-        var heading = loc?.bearing ?: 0f
+        // Keep the last heading on GPS dropout (tunnels) — don't snap the map to north.
+        var heading = loc?.bearing ?: (if (camInit) camHdg else 0f)
         var offRoute = false
 
         if (r != null && loc != null) {
@@ -433,7 +483,16 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             // to move the displayed marker.
             if (loc.speed < 0.5f) heading = ns.heading
             val speed = if (loc.speed > 0.5f) loc.speed.toDouble() else 11.0
-            etaSec = ns.remainingM / speed
+            // Smooth the ETA so it doesn't flicker every second with raw speed; recompute the
+            // absolute arrival clock only every 5 s so "arrives 1:32 PM" stays steady.
+            val rawEta = ns.remainingM / speed
+            smoothEtaSec = if (smoothEtaSec <= 0.0) rawEta else smoothEtaSec + (rawEta - smoothEtaSec) * 0.08
+            etaSec = smoothEtaSec
+            val nowMs = System.currentTimeMillis()
+            if (etaArrivalMs == 0L || nowMs - lastArrivalCalcMs > 5_000) {
+                etaArrivalMs = nowMs + (smoothEtaSec * 1000).toLong()
+                lastArrivalCalcMs = nowMs
+            }
             // Feed the dash's own turn-by-turn widget with CORRECT distances (next-turn
             // + total remaining) and real arrival time. Glyph stays CONTINUE until
             // other codes are verified.
@@ -471,33 +530,64 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         updateThermal()
 
-        // Frame-center target: the rider, else the destination, else standby (0,0).
-        val haveTarget = loc != null || (dLat != null && dLng != null)
-        val targetLat = matchedLat ?: dLat ?: camLat
-        val targetLng = matchedLng ?: dLng ?: camLng
+        // ── Predictive, framerate-independent camera (CarPlay-smooth) ──
+        // Capture each fresh GPS fix + its velocity for dead-reckoning.
+        if (loc != null && loc.time != lastFixTime) {
+            lastFixTime = loc.time
+            fixLat = loc.latitude; fixLng = loc.longitude
+            fixBearing = loc.bearing; fixSpeed = loc.speed
+            fixWallMs = System.currentTimeMillis()
+        }
+        // Extrapolate where the rider IS NOW (last fix + velocity·elapsed), so the camera
+        // doesn't trail the bike between 1 Hz fixes. Only predict while genuinely moving.
+        val rider: Pair<Double, Double>? = when {
+            loc == null -> null
+            fixSpeed > 1.0f -> {
+                val elapsed = ((System.currentTimeMillis() - fixWallMs) / 1000.0).coerceAtMost(1.5)
+                project(fixLat, fixLng, fixBearing.toDouble(), fixSpeed * elapsed)
+            }
+            else -> matchedLat!! to matchedLng!!
+        }
+
+        val haveTarget = rider != null || (dLat != null && dLng != null)
+        val targetLat = rider?.first ?: dLat ?: camLat
+        val targetLng = rider?.second ?: dLng ?: camLng
+
+        // Time-based smoothing: alpha derived from the real frame interval + a time
+        // constant, so motion is equally smooth at any (dynamic) frame rate.
+        val nowNs = System.nanoTime()
+        val dt = if (lastTickNs == 0L) 0.042 else ((nowNs - lastTickNs) / 1e9).coerceIn(0.0, 0.5)
+        lastTickNs = nowNs
+        val a = if (camInit) (1.0 - Math.exp(-dt / SMOOTH_TAU)) else 1.0
+
+        val prevLat = camLat; val prevLng = camLng
         if (haveTarget) {
-            if (!camInit) {
-                camLat = targetLat; camLng = targetLng; camHdg = heading; camInit = true
-            } else {
-                // Ease ~0.35/frame → settles in <0.5 s at 8 fps, so the map slides
-                // smoothly between 1 Hz fixes without visibly lagging the bike.
-                val a = 0.35
+            if (!camInit) { camLat = targetLat; camLng = targetLng; camHdg = heading; camInit = true }
+            else {
                 camLat += (targetLat - camLat) * a
                 camLng += (targetLng - camLng) * a
                 val dh = (((heading - camHdg) % 360f) + 540f) % 360f - 180f  // shortest arc
                 camHdg += dh * a.toFloat()
             }
         }
+        // Lock the dash marker to the smoothed centre (map slides under it).
+        frameRiderLat = if (rider != null) camLat else null
+        frameRiderLng = if (rider != null) camLng else null
+        // Drive the dynamic frame rate: full speed while moving/turning, throttle when idle.
+        val movedM = if (camInit) GeoPoint.distMeters(GeoPoint(prevLat, prevLng), GeoPoint(camLat, camLng)) else 0.0
+        camMoving = movedM > 0.25 || (loc?.speed ?: 0f) > 0.8f
+
         val centerLat = if (haveTarget) camLat else 0.0
         val centerLng = if (haveTarget) camLng else 0.0
         val camHeading = if (haveTarget) camHdg else heading
 
         val sig = buildString {
-            // ~1 m resolution (5 dp) so each eased step redraws (smooth motion) while
-            // sub-metre GPS jitter at a standstill doesn't churn the cache.
-            append("%.5f".format(centerLat)); append("%.5f".format(centerLng))
+            // High resolution (6 dp ≈ 0.1 m, 0.1° heading) so every smoothed step redraws
+            // for buttery motion. Safe from standstill jitter because the camera is fed the
+            // SMOOTHED position (which settles and stops), not raw GPS.
+            append("%.6f".format(centerLat)); append("%.6f".format(centerLng))
             append(zoom); append(panX.toInt()); append(panY.toInt())
-            append(if (headingUp) camHeading.toInt() else 0)
+            append(if (headingUp) (camHeading * 10).toInt() else 0)
             append(remainingM?.let { (it / 100).toInt() } ?: -1) // 100 m resolution to avoid jitter
             append(if (r != null) r.geometry.size else 0)
         }
@@ -544,16 +634,19 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val bmp = frameBitmap ?: return
         val loc = location.location.value
-        // Glanceable ETA, shown only while navigating to a destination.
+        // Glanceable ETA — minutes remaining + a stable 12-hour arrival clock. Both come
+        // from the smoothed estimate so they don't flicker every second.
         val mins = _ui.value.etaMinutes
-        val navingToDest = destLat != null && destLng != null
-        val etaPrimary = if (navingToDest && mins != null)
-            (if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "$mins min") else null
-        // ETA only — no distance (the dash's own widget shows distance).
-        val etaSecondary = if (etaPrimary != null && mins != null) {
-            "arrives " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-                .format(java.util.Date(System.currentTimeMillis() + (mins * 60_000L)))
+        val arriving = mins != null && mins <= 0
+        val etaPrimary = if (mins != null && etaArrivalMs > 0L) when {
+            arriving   -> "Arriving"
+            mins >= 60 -> "${mins / 60}h ${mins % 60}m"
+            else       -> "$mins min"
         } else null
+        // 12-hour arrival clock; hidden once arriving.
+        val etaSecondary = if (etaPrimary != null && !arriving)
+            java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date(etaArrivalMs))
+        else null
         val frame = MapRenderer.Frame(
             centerLat = centerLat,
             centerLng = centerLng,
@@ -562,8 +655,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             panY = panY,
             headingUp = headingUp && (loc != null),
             heading = heading,
-            riderLat = matchedLat,
-            riderLng = matchedLng,
+            riderLat = frameRiderLat,
+            riderLng = frameRiderLng,
             destLat = destLat,
             destLng = destLng,
             destName = _ui.value.destinationName,

@@ -36,7 +36,10 @@ object LocationParser {
     fun parse(text: String): SharedLocation {
         val trimmed = text.trim()
         Log.d(TAG, "parse(): $trimmed")
-        val url = urlRegex.find(trimmed)?.value ?: if (trimmed.startsWith("geo:")) trimmed else null
+        // Strip trailing sentence punctuation that often clings to a shared link
+        // ("...goo.gl/abc." / "(...)") so the redirect/resolve doesn't 404.
+        val url = urlRegex.find(trimmed)?.value?.trimEnd('.', ',', ';', '!', '?', ')', ']', '"', '\'')
+            ?: if (trimmed.startsWith("geo:")) trimmed else null
 
         val isShort = url != null && (
             url.contains("maps.app.goo.gl") || url.contains("goo.gl/maps") ||

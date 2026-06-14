@@ -20,6 +20,10 @@ object PolylineCodec {
             } while (b >= 0x20 && index < len)
             lat += if (result and 1 != 0) (result shr 1).inv() else result shr 1
 
+            // Truncated input: a lat group consumed the last char, no lng follows → stop
+            // cleanly instead of reading past the end (StringIndexOutOfBounds).
+            if (index >= len) break
+
             // longitude delta
             shift = 0; result = 0
             do {

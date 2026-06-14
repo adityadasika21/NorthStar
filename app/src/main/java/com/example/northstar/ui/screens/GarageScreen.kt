@@ -120,7 +120,7 @@ private fun MaintenanceTab(ui: GarageUi, onMark: (MaintenanceItem) -> Unit, onLo
 
     if (hero != null) {
         val ridden = (ui.odometerKm - hero.item.lastDoneOdoKm).coerceAtLeast(0)
-        val frac = (ridden.toFloat() / hero.item.intervalKm.toFloat()).coerceIn(0f, 1f)
+        val frac = (ridden.toFloat() / hero.item.intervalKm.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
         val tone = toneColor[hero.tone] ?: Gold
         NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
@@ -158,7 +158,7 @@ private fun MaintenanceTab(ui: GarageUi, onMark: (MaintenanceItem) -> Unit, onLo
         ui.maint.forEachIndexed { i, row ->
             if (i > 0) NorthstarDivider(Modifier.padding(horizontal = 4.dp))
             val color = toneColor[row.tone] ?: Gold
-            val fill = (1f - (row.remainingKm.toFloat().coerceAtLeast(0f) / row.item.intervalKm.toFloat())).coerceIn(0.06f, 1f)
+            val fill = (1f - (row.remainingKm.toFloat().coerceAtLeast(0f) / row.item.intervalKm.coerceAtLeast(1).toFloat())).coerceIn(0.06f, 1f)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp)) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(Surf2).border(1.dp, Line, RoundedCornerShape(11.dp))) {
                     Icon(iconFor(row.item.iconKey), null, tint = color, modifier = Modifier.size(20.dp))

@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,7 +42,16 @@ fun SettingsScreen(
     var screenOff   by remember { mutableStateOf(true) }
     var keepAwake   by remember { mutableStateOf(true) }
     var units       by remember { mutableStateOf("Kilometres") }
-    var voice       by remember { mutableStateOf("Chime") }
+
+    // Real voice setting, shared with RouteScreen via the VoiceManager singleton.
+    val ctx = LocalContext.current
+    val voiceManager = remember { com.example.northstar.dash.nav.VoiceManager.get(ctx) }
+    val voiceMode by voiceManager.mode.collectAsState()
+    val voice = when (voiceMode) {
+        com.example.northstar.dash.nav.VoiceMode.OFF   -> "Off"
+        com.example.northstar.dash.nav.VoiceMode.CHIME -> "Chime"
+        com.example.northstar.dash.nav.VoiceMode.FULL  -> "Full TTS"
+    }
 
     Column(
         modifier = Modifier
@@ -98,7 +108,13 @@ fun SettingsScreen(
 
         SectionLabel("Voice & guidance")
         NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
-            NorthstarSegmented(listOf("Off", "Chime", "Full TTS"), voice, { voice = it }, Modifier.fillMaxWidth())
+            NorthstarSegmented(listOf("Off", "Chime", "Full TTS"), voice, {
+                voiceManager.setMode(when (it) {
+                    "Off"      -> com.example.northstar.dash.nav.VoiceMode.OFF
+                    "Full TTS" -> com.example.northstar.dash.nav.VoiceMode.FULL
+                    else       -> com.example.northstar.dash.nav.VoiceMode.CHIME
+                })
+            }, Modifier.fillMaxWidth())
         }
 
         SectionLabel("Units")

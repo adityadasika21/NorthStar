@@ -66,7 +66,17 @@ The control-plane work builds on the excellent reverse-engineering in [**better-
 
 **📦 Grab the latest APK from [Releases](https://github.com/adityadasika21/NorthStar/releases/latest)** and sideload it (you'll need to allow "install unknown apps"). No account or setup required to try it.
 
-> Heads-up: it's signed with a debug key for now, so Android may show an "unverified app" warning on install — that's expected for a community build.
+Every release is signed with the same key, so new versions **update in place** — your rides and Garage data are kept (no uninstall needed). The app also **checks for new releases on launch** and offers a one-tap in-app update when one's out.
+
+> Heads-up: it's signed with a self-managed key, so Android may show an "unverified app" warning on install — that's expected for a community build.
+
+### 🔄 Get update notifications automatically (recommended)
+
+So you never miss an update, install Northstar through **[Obtainium](https://github.com/ImranR98/Obtainium)** — a free app that watches GitHub Releases and notifies you (and one-tap updates) whenever there's a new version:
+
+1. Install Obtainium.
+2. Add app → paste `https://github.com/adityadasika21/NorthStar`
+3. It tracks every release from here on — you'll get a notification each time I ship one.
 
 ---
 

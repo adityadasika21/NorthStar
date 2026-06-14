@@ -186,6 +186,10 @@ fun AppNavigation(
             }
         }
 
+        // Checks GitHub Releases on app open; shows an update dialog only if a newer
+        // version is published. Renders nothing otherwise.
+        com.example.northstar.ui.components.UpdatePrompt()
+
         if (showBottomNav) {
             NorthstarBottomNav(
                 currentRoute = currentRoute,

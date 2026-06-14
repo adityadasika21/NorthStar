@@ -11,10 +11,11 @@ import android.view.Surface
 
 /**
  * MediaCodec H.264 encoder for the Tripper Dash stream:
- *   526 × 300, up to 24 fps, ~1.2 Mbps, Baseline L4.1, 1-second IDR interval.
+ *   526 × 300, up to 15 fps, ~0.8 Mbps, Baseline L4.1, 1-second IDR interval.
  *
- * [FPS] is the MAX/hint rate — the frame loop feeds ~24 fps while moving (buttery,
- * Android-Auto-style motion) and throttles to a few fps when stopped to save power.
+ * [FPS] is the MAX/hint rate — the frame loop feeds ~15 fps while moving (the dash decoder's
+ * steady ceiling; the predictor interpolates motion between GPS fixes) and throttles to a few
+ * fps when stopped to save power.
  * The hardware encoder auto-timestamps each frame from the input surface, so the
  * variable feed rate is fine. Tiny resolution → still far under the OLED-projection
  * draw this whole project exists to avoid.
@@ -29,7 +30,12 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
     companion object {
         const val WIDTH   = 526
         const val HEIGHT  = 300
-        const val FPS     = 24
+        // Matched to the dash decoder's real ceiling (better-dash: ~8–12 fps before it "blinks";
+        // stock RE app uses 4). The loop feeds ~15 while moving and throttles when idle.
+        const val FPS     = 15          // max/hint; the loop feeds ~15 while moving, throttles when idle
+        // ~1.2 Mbps. 0.8 briefly blocked/pixelated on high-motion frames (sharp turns, zoom) before
+        // the rate settled; 1.2 gives the encoder headroom for those moments yet stays far under the
+        // old 2.0 that overran the decoder.
         const val BITRATE = 1_200_000
         private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
         private const val DRAIN_TIMEOUT_US = 10_000L

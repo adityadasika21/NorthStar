@@ -16,7 +16,7 @@ import java.util.UUID
  * synchronous; callers run them off the main thread.
  */
 class NorthstarDb private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "northstar.db", null, 4) {
+    SQLiteOpenHelper(context.applicationContext, "northstar.db", null, 7) {
 
     companion object {
         @Volatile private var instance: NorthstarDb? = null
@@ -24,7 +24,7 @@ class NorthstarDb private constructor(context: Context) :
             instance ?: synchronized(this) {
                 instance ?: NorthstarDb(context).also { instance = it }
             }
-        const val DEFAULT_ODOMETER = 325   // seeded from the bike's current ODO; user-editable
+        const val DEFAULT_ODOMETER = 325.0   // seeded from the bike's current ODO; user-editable. Fractional so recorded rides add their exact distance.
         fun newSid(): String = UUID.randomUUID().toString()
 
         private const val CREATE_RIDE =
@@ -42,6 +42,80 @@ class NorthstarDb private constructor(context: Context) :
                  start_lng REAL NOT NULL DEFAULT 0,
                  end_lat REAL NOT NULL DEFAULT 0,
                  end_lng REAL NOT NULL DEFAULT 0)"""
+
+        private const val CREATE_SERVICE_RECORD =
+            """CREATE TABLE IF NOT EXISTS service_record(
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 sid TEXT NOT NULL DEFAULT '',
+                 item_sid TEXT NOT NULL DEFAULT '',
+                 name TEXT NOT NULL DEFAULT '',
+                 odometer_km INTEGER NOT NULL DEFAULT 0,
+                 date_ms INTEGER NOT NULL,
+                 cost REAL NOT NULL DEFAULT 0,
+                 invoice_path TEXT NOT NULL DEFAULT '',
+                 note TEXT NOT NULL DEFAULT '',
+                 title TEXT NOT NULL DEFAULT '',
+                 kind TEXT NOT NULL DEFAULT 'company',
+                 scheduled_key TEXT NOT NULL DEFAULT '',
+                 item_sids TEXT NOT NULL DEFAULT '')"""
+
+        private const val CREATE_SCHEDULED_SERVICE =
+            """CREATE TABLE IF NOT EXISTS scheduled_service(
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 sid TEXT NOT NULL DEFAULT '',
+                 label TEXT NOT NULL,
+                 target_km INTEGER NOT NULL DEFAULT 0,
+                 target_months INTEGER NOT NULL DEFAULT 0,
+                 free INTEGER NOT NULL DEFAULT 0,
+                 order_idx INTEGER NOT NULL DEFAULT 0)"""
+
+        private const val CREATE_DOCUMENT =
+            """CREATE TABLE IF NOT EXISTS document(
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 sid TEXT NOT NULL DEFAULT '',
+                 type TEXT NOT NULL DEFAULT 'other',
+                 title TEXT NOT NULL DEFAULT '',
+                 number TEXT NOT NULL DEFAULT '',
+                 issue_ms INTEGER NOT NULL DEFAULT 0,
+                 expiry_ms INTEGER NOT NULL DEFAULT 0,
+                 file_path TEXT NOT NULL DEFAULT '',
+                 note TEXT NOT NULL DEFAULT '')"""
+
+        private const val CREATE_BIKE_IDENTITY =
+            """CREATE TABLE IF NOT EXISTS bike_identity(
+                 id INTEGER PRIMARY KEY,
+                 vin TEXT NOT NULL DEFAULT '',
+                 engine_no TEXT NOT NULL DEFAULT '',
+                 reg_no TEXT NOT NULL DEFAULT '',
+                 purchase_ms INTEGER NOT NULL DEFAULT 0,
+                 colour TEXT NOT NULL DEFAULT '')"""
+
+        /** The 4 manufacturer free services (deterministic sids so they dedupe across devices). */
+        data class SchedSeed(val sid: String, val label: String, val km: Int, val months: Int)
+        val FREE_SERVICES = listOf(
+            SchedSeed("free-1", "1st service", 500, 2),
+            SchedSeed("free-2", "2nd service", 5000, 6),
+            SchedSeed("free-3", "3rd service", 10000, 12),
+            SchedSeed("free-4", "4th service", 15000, 18),
+        )
+
+        /**
+         * Canonical maintenance schedule, derived from the RE New Himalayan 450 owner's manual
+         * periodic-maintenance chart (km OR months, whichever earlier). Deterministic sids so two
+         * devices dedupe on sync, and so upgrades can realign existing rows in place.
+         */
+        data class Seed(val sid: String, val name: String, val icon: String, val km: Int, val months: Int)
+        val SEED_ITEMS = listOf(
+            Seed("seed-chain",        "Chain clean & lube",   "chain",  500,   0),
+            Seed("seed-oil",          "Engine oil & filter",  "drop",   10000, 12),
+            Seed("seed-airfilter",    "Air filter",           "wrench", 10000, 0),
+            Seed("seed-brakes",       "Brake pads (front)",   "gauge",  5000,  0),
+            Seed("seed-valve",        "Valve clearance",      "wrench", 20000, 0),
+            Seed("seed-sparkplug",    "Spark plug",           "wrench", 20000, 0),
+            Seed("seed-brakefluid",   "Brake fluid",          "drop",   0,     24),
+            Seed("seed-coolant",      "Coolant",              "thermo", 40000, 48),
+            Seed("seed-throttlebody", "Throttle body clean",  "wrench", 40000, 48),
+        )
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -63,9 +137,10 @@ class NorthstarDb private constructor(context: Context) :
                  icon_key TEXT NOT NULL,
                  interval_km INTEGER NOT NULL,
                  last_done_odo_km INTEGER NOT NULL,
-                 last_done_date_ms INTEGER NOT NULL)"""
+                 last_done_date_ms INTEGER NOT NULL,
+                 interval_months INTEGER NOT NULL DEFAULT 0)"""
         )
-        db.execSQL("CREATE TABLE bike_state(id INTEGER PRIMARY KEY, odometer_km INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE bike_state(id INTEGER PRIMARY KEY, odometer_km REAL NOT NULL)")
         db.execSQL("INSERT INTO bike_state(id, odometer_km) VALUES (0, $DEFAULT_ODOMETER)")
         db.execSQL(
             """CREATE TABLE saved_location(
@@ -78,7 +153,13 @@ class NorthstarDb private constructor(context: Context) :
                  created_ms INTEGER NOT NULL)"""
         )
         db.execSQL(CREATE_RIDE)
+        db.execSQL(CREATE_SERVICE_RECORD)
+        db.execSQL(CREATE_SCHEDULED_SERVICE)
+        db.execSQL(CREATE_DOCUMENT)
+        db.execSQL(CREATE_BIKE_IDENTITY)
+        db.execSQL("INSERT INTO bike_identity(id) VALUES (0)")
         seedMaintenance(db)
+        seedScheduledServices(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -100,26 +181,75 @@ class NorthstarDb private constructor(context: Context) :
             }
         }
         if (oldVersion < 4) db.execSQL(CREATE_RIDE)
+        if (oldVersion < 5) {
+            // Odometer becomes fractional (recorded rides add their exact distance). Rebuild the
+            // single-row bike_state table with REAL affinity, preserving the current reading.
+            db.execSQL("ALTER TABLE bike_state RENAME TO bike_state_old")
+            db.execSQL("CREATE TABLE bike_state(id INTEGER PRIMARY KEY, odometer_km REAL NOT NULL)")
+            db.execSQL("INSERT INTO bike_state(id, odometer_km) SELECT id, odometer_km FROM bike_state_old")
+            db.execSQL("DROP TABLE bike_state_old")
+        }
+        if (oldVersion < 6) {
+            // Maintenance gains a months interval (manual is "km OR months"); add the service log.
+            runCatching { db.execSQL("ALTER TABLE maintenance_item ADD COLUMN interval_months INTEGER NOT NULL DEFAULT 0") }
+            db.execSQL(CREATE_SERVICE_RECORD)
+            // Realign the originally-seeded items to the manual values, and add the items that
+            // were missing. Only the intervals are touched — the rider's last-done odo/date and
+            // any custom items are left untouched.
+            for (s in SEED_ITEMS) {
+                val updated = db.update("maintenance_item",
+                    ContentValues().apply { put("interval_km", s.km); put("interval_months", s.months) },
+                    "sid=?", arrayOf(s.sid))
+                if (updated == 0) {
+                    db.insert("maintenance_item", null, ContentValues().apply {
+                        put("sid", s.sid); put("name", s.name); put("icon_key", s.icon)
+                        put("interval_km", s.km); put("interval_months", s.months)
+                        put("last_done_odo_km", 0); put("last_done_date_ms", System.currentTimeMillis())
+                    })
+                }
+            }
+        }
+        if (oldVersion < 7) {
+            // Service log becomes visit-based (multi-item, company/DIY); add scheduled services,
+            // documents (Glovebox), and bike identity. (service_record exists by now — created in
+            // v6 above for older DBs, or already present for v6 DBs.)
+            for (col in listOf(
+                "title TEXT NOT NULL DEFAULT ''",
+                "kind TEXT NOT NULL DEFAULT 'company'",
+                "scheduled_key TEXT NOT NULL DEFAULT ''",
+                "item_sids TEXT NOT NULL DEFAULT ''",
+            )) runCatching { db.execSQL("ALTER TABLE service_record ADD COLUMN $col") }
+            // Old single-item rows → carry their name/item into the new visit fields.
+            runCatching { db.execSQL("UPDATE service_record SET title = name WHERE title = '' AND name <> ''") }
+            runCatching { db.execSQL("UPDATE service_record SET item_sids = item_sid WHERE item_sids = '' AND item_sid <> ''") }
+            db.execSQL(CREATE_SCHEDULED_SERVICE)
+            db.execSQL(CREATE_DOCUMENT)
+            db.execSQL(CREATE_BIKE_IDENTITY)
+            runCatching { db.execSQL("INSERT INTO bike_identity(id) VALUES (0)") }
+            seedScheduledServices(db)
+        }
+    }
+
+    private fun seedScheduledServices(db: SQLiteDatabase) {
+        for ((i, s) in FREE_SERVICES.withIndex()) {
+            db.insert("scheduled_service", null, ContentValues().apply {
+                put("sid", s.sid); put("label", s.label); put("target_km", s.km)
+                put("target_months", s.months); put("free", 1); put("order_idx", i)
+            })
+        }
     }
 
     private fun seedMaintenance(db: SQLiteDatabase) {
         val now = System.currentTimeMillis()
         // DETERMINISTIC sids: every fresh install seeds the same ids, so when two devices
         // sync these dedupe (upsert by sid) instead of producing duplicates.
-        data class Seed(val sid: String, val name: String, val icon: String, val interval: Int)
-        val seeds = listOf(
-            Seed("seed-chain", "Chain clean & lube", "chain", 500),
-            Seed("seed-oil", "Engine oil", "drop", 5000),
-            Seed("seed-airfilter", "Air filter", "wrench", 8000),
-            Seed("seed-brakes", "Brake pads (front)", "gauge", 6000),
-            Seed("seed-coolant", "Coolant", "thermo", 12000),
-        )
-        for (s in seeds) {
+        for (s in SEED_ITEMS) {
             db.insert("maintenance_item", null, ContentValues().apply {
                 put("sid", s.sid)
                 put("name", s.name)
                 put("icon_key", s.icon)
-                put("interval_km", s.interval)
+                put("interval_km", s.km)
+                put("interval_months", s.months)
                 put("last_done_odo_km", 0)
                 put("last_done_date_ms", now)
             })
@@ -127,13 +257,18 @@ class NorthstarDb private constructor(context: Context) :
     }
 
     // ── Odometer (synced as a single doc) ──────────────────────────────────
-    fun odometer(): Int =
+    fun odometer(): Double =
         readableDatabase.rawQuery("SELECT odometer_km FROM bike_state WHERE id=0", null).use {
-            if (it.moveToFirst()) it.getInt(0) else DEFAULT_ODOMETER
+            if (it.moveToFirst()) it.getDouble(0) else DEFAULT_ODOMETER
         }
 
-    fun setOdometer(km: Int) {
+    fun setOdometer(km: Double) {
         writableDatabase.update("bike_state", ContentValues().apply { put("odometer_km", km) }, "id=0", null)
+    }
+
+    /** Atomically add [deltaKm] to the stored odometer (used when a recorded ride completes). */
+    fun addToOdometer(deltaKm: Double) {
+        writableDatabase.execSQL("UPDATE bike_state SET odometer_km = odometer_km + ? WHERE id=0", arrayOf(deltaKm))
     }
 
     // ── Fuel ──────────────────────────────────────────────────────────────
@@ -170,13 +305,14 @@ class NorthstarDb private constructor(context: Context) :
     fun maintenanceItems(): List<MaintenanceItem> {
         val out = ArrayList<MaintenanceItem>()
         readableDatabase.rawQuery(
-            "SELECT id,sid,name,icon_key,interval_km,last_done_odo_km,last_done_date_ms " +
+            "SELECT id,sid,name,icon_key,interval_km,last_done_odo_km,last_done_date_ms,interval_months " +
                 "FROM maintenance_item ORDER BY id ASC", null,
         ).use { c ->
             while (c.moveToNext()) out.add(
                 MaintenanceItem(
                     id = c.getLong(0), sid = c.getString(1), name = c.getString(2), iconKey = c.getString(3),
                     intervalKm = c.getInt(4), lastDoneOdoKm = c.getInt(5), lastDoneDateMs = c.getLong(6),
+                    intervalMonths = c.getInt(7),
                 )
             )
         }
@@ -187,7 +323,7 @@ class NorthstarDb private constructor(context: Context) :
         val cv = ContentValues().apply {
             put("sid", m.sid); put("name", m.name); put("icon_key", m.iconKey)
             put("interval_km", m.intervalKm); put("last_done_odo_km", m.lastDoneOdoKm)
-            put("last_done_date_ms", m.lastDoneDateMs)
+            put("last_done_date_ms", m.lastDoneDateMs); put("interval_months", m.intervalMonths)
         }
         if (writableDatabase.update("maintenance_item", cv, "sid=?", arrayOf(m.sid)) == 0)
             writableDatabase.insert("maintenance_item", null, cv)
@@ -256,4 +392,120 @@ class NorthstarDb private constructor(context: Context) :
 
     fun deleteRideBySid(sid: String) =
         writableDatabase.delete("ride", "sid=?", arrayOf(sid))
+
+    // ── Service records / visits (the maintenance log + invoices) ────────────
+    fun serviceRecords(): List<ServiceRecord> {
+        val out = ArrayList<ServiceRecord>()
+        readableDatabase.rawQuery(
+            "SELECT id,sid,title,name,kind,scheduled_key,item_sids,item_sid,odometer_km,date_ms,cost,invoice_path,note " +
+                "FROM service_record ORDER BY date_ms DESC", null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                val title = c.getString(2).ifBlank { c.getString(3) ?: "" }
+                val itemSidsCsv = (c.getString(6) ?: "").ifBlank { c.getString(7) ?: "" }
+                out.add(
+                    ServiceRecord(
+                        id = c.getLong(0), sid = c.getString(1), title = title,
+                        kind = c.getString(4)?.ifBlank { "company" } ?: "company",
+                        scheduledKey = c.getString(5) ?: "",
+                        itemSids = itemSidsCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() },
+                        odometerKm = c.getInt(8), dateMs = c.getLong(9), cost = c.getDouble(10),
+                        invoicePath = c.getString(11) ?: "", note = c.getString(12) ?: "",
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    fun upsertServiceRecord(r: ServiceRecord) {
+        val cv = ContentValues().apply {
+            put("sid", r.sid); put("title", r.title); put("name", r.title)
+            put("kind", r.kind); put("scheduled_key", r.scheduledKey)
+            put("item_sids", r.itemSids.joinToString(",")); put("item_sid", r.itemSids.firstOrNull() ?: "")
+            put("odometer_km", r.odometerKm); put("date_ms", r.dateMs); put("cost", r.cost)
+            put("invoice_path", r.invoicePath); put("note", r.note)
+        }
+        if (writableDatabase.update("service_record", cv, "sid=?", arrayOf(r.sid)) == 0)
+            writableDatabase.insert("service_record", null, cv)
+    }
+
+    fun deleteServiceRecordBySid(sid: String) =
+        writableDatabase.delete("service_record", "sid=?", arrayOf(sid))
+
+    // ── Scheduled services (manufacturer milestones + rider-added) ───────────
+    fun scheduledServices(): List<ScheduledService> {
+        val out = ArrayList<ScheduledService>()
+        readableDatabase.rawQuery(
+            "SELECT id,sid,label,target_km,target_months,free,order_idx FROM scheduled_service ORDER BY order_idx ASC, target_km ASC", null,
+        ).use { c ->
+            while (c.moveToNext()) out.add(
+                ScheduledService(
+                    id = c.getLong(0), sid = c.getString(1), label = c.getString(2),
+                    targetKm = c.getInt(3), targetMonths = c.getInt(4), free = c.getInt(5) != 0, orderIdx = c.getInt(6),
+                )
+            )
+        }
+        return out
+    }
+
+    fun upsertScheduledService(s: ScheduledService) {
+        val cv = ContentValues().apply {
+            put("sid", s.sid); put("label", s.label); put("target_km", s.targetKm)
+            put("target_months", s.targetMonths); put("free", if (s.free) 1 else 0); put("order_idx", s.orderIdx)
+        }
+        if (writableDatabase.update("scheduled_service", cv, "sid=?", arrayOf(s.sid)) == 0)
+            writableDatabase.insert("scheduled_service", null, cv)
+    }
+
+    fun deleteScheduledServiceBySid(sid: String) =
+        writableDatabase.delete("scheduled_service", "sid=?", arrayOf(sid))
+
+    // ── Documents (Glovebox) ─────────────────────────────────────────────────
+    fun documents(): List<VehicleDocument> {
+        val out = ArrayList<VehicleDocument>()
+        readableDatabase.rawQuery(
+            "SELECT id,sid,type,title,number,issue_ms,expiry_ms,file_path,note FROM document ORDER BY expiry_ms ASC, title ASC", null,
+        ).use { c ->
+            while (c.moveToNext()) out.add(
+                VehicleDocument(
+                    id = c.getLong(0), sid = c.getString(1), type = c.getString(2), title = c.getString(3),
+                    number = c.getString(4) ?: "", issueMs = c.getLong(5), expiryMs = c.getLong(6),
+                    filePath = c.getString(7) ?: "", note = c.getString(8) ?: "",
+                )
+            )
+        }
+        return out
+    }
+
+    fun upsertDocument(d: VehicleDocument) {
+        val cv = ContentValues().apply {
+            put("sid", d.sid); put("type", d.type); put("title", d.title); put("number", d.number)
+            put("issue_ms", d.issueMs); put("expiry_ms", d.expiryMs); put("file_path", d.filePath); put("note", d.note)
+        }
+        if (writableDatabase.update("document", cv, "sid=?", arrayOf(d.sid)) == 0)
+            writableDatabase.insert("document", null, cv)
+    }
+
+    fun deleteDocumentBySid(sid: String) =
+        writableDatabase.delete("document", "sid=?", arrayOf(sid))
+
+    // ── Bike identity (single row) ───────────────────────────────────────────
+    fun bikeIdentity(): BikeIdentity =
+        readableDatabase.rawQuery("SELECT vin,engine_no,reg_no,purchase_ms,colour FROM bike_identity WHERE id=0", null).use {
+            if (it.moveToFirst()) BikeIdentity(
+                vin = it.getString(0) ?: "", engineNo = it.getString(1) ?: "", regNo = it.getString(2) ?: "",
+                purchaseMs = it.getLong(3), colour = it.getString(4) ?: "",
+            ) else BikeIdentity()
+        }
+
+    fun setBikeIdentity(b: BikeIdentity) {
+        val cv = ContentValues().apply {
+            put("vin", b.vin); put("engine_no", b.engineNo); put("reg_no", b.regNo)
+            put("purchase_ms", b.purchaseMs); put("colour", b.colour)
+        }
+        if (writableDatabase.update("bike_identity", cv, "id=0", null) == 0) {
+            cv.put("id", 0); writableDatabase.insert("bike_identity", null, cv)
+        }
+    }
 }

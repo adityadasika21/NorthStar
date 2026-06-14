@@ -77,6 +77,8 @@ class MapRenderer(private val tiles: TileProvider) {
     private val riderPath = Path()
     private val tmpRect = RectF()
     private val pillRect = RectF()
+    private val tileSrc = Rect()      // sub-region of an ancestor tile when scaling up
+    private val childDst = RectF()    // quadrant target when scaling children down
     private val textBounds = Rect()
     private val tiltMatrix = Matrix()
     private val tiltSrc = FloatArray(8)
@@ -132,11 +134,10 @@ class MapRenderer(private val tiles: TileProvider) {
         val txMax = Math.floorDiv((left + w + pad).toInt(), ts)
         val tyMax = Math.floorDiv((top + h + pad).toInt(), ts)
         for (tx in txMin..txMax) for (ty in tyMin..tyMax) {
-            val bmp = tiles.get(f.zoom, tx, ty) ?: continue
             val dstL = (tx * ts - left).toFloat()
             val dstT = (ty * ts - top).toFloat()
             tmpRect.set(dstL, dstT, dstL + ts, dstT + ts)
-            canvas.drawBitmap(bmp, null, tmpRect, tilePaint)
+            drawTileBestEffort(canvas, f.zoom, tx, ty, tmpRect)
         }
 
         // ── Road route polyline ──
@@ -217,5 +218,45 @@ class MapRenderer(private val tiles: TileProvider) {
             standbyPaint.getTextBounds(msg, 0, msg.length, textBounds)
             canvas.drawText(msg, (w - textBounds.width()) / 2f, h / 2f, standbyPaint)
         }
+    }
+
+    /**
+     * Draws one map tile, never leaving a blank cell on a cache miss. Slippy-map trick:
+     * 1. exact tile if cached (also kicks off the async load);
+     * 2. else scale UP the matching sub-region of a cached lower-zoom ancestor — the level
+     *    we just left is still in memory, so a zoom-IN renders instantly and only sharpens
+     *    once the real tile arrives (no blank flash, which is what made zoom feel slow);
+     * 3. else scale DOWN the four cached higher-zoom children into quadrants (zoom-OUT case).
+     */
+    private fun drawTileBestEffort(canvas: Canvas, z: Int, tx: Int, ty: Int, dst: RectF) {
+        tiles.get(z, tx, ty)?.let { canvas.drawBitmap(it, null, dst, tilePaint); return }
+
+        val ts = Mercator.TILE_SIZE
+        var up = 1
+        while (up <= 4 && z - up >= 0) {
+            val anc = tiles.getCached(z - up, tx shr up, ty shr up)
+            if (anc != null) {
+                val cells = 1 shl up
+                val sub = ts / cells
+                val sxOff = (tx and (cells - 1)) * sub
+                val syOff = (ty and (cells - 1)) * sub
+                tileSrc.set(sxOff, syOff, sxOff + sub, syOff + sub)
+                canvas.drawBitmap(anc, tileSrc, dst, tilePaint)
+                return
+            }
+            up++
+        }
+
+        val halfW = (dst.right - dst.left) / 2f
+        val halfH = (dst.bottom - dst.top) / 2f
+        for (qx in 0..1) for (qy in 0..1) {
+            val child = tiles.getCached(z + 1, tx * 2 + qx, ty * 2 + qy) ?: continue
+            childDst.set(
+                dst.left + qx * halfW, dst.top + qy * halfH,
+                dst.left + qx * halfW + halfW, dst.top + qy * halfH + halfH,
+            )
+            canvas.drawBitmap(child, null, childDst, tilePaint)
+        }
+        // Deep miss across all levels → the land-colour bg shows through (rare).
     }
 }

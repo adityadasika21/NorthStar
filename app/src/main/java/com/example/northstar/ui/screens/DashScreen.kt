@@ -152,19 +152,22 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                         Text(
                             when (ui.stage) {
                                 ConnStage.OFFLINE -> "Connect to Tripper Dash"
-                                ConnStage.WIFI    -> "Joining ${ui.ssid}…"
-                                ConnStage.AUTH    -> "Authenticating with dash…"
-                                ConnStage.ERROR   -> "Connection failed"
+                                ConnStage.WIFI    -> if (ui.ssid.isNotBlank()) "Joining ${ui.ssid}…" else "Finding your dash…"
+                                ConnStage.AUTH    -> if (ui.retryAttempt > 0) "Retrying handshake…" else "Pairing with dash…"
+                                ConnStage.ERROR   -> "Couldn't connect"
                                 ConnStage.STREAMING -> "Streaming"
                             },
                             color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                         )
                         Text(
                             when (ui.stage) {
-                                ConnStage.OFFLINE -> "WiFi + handshake + stream, one tap"
+                                ConnStage.OFFLINE -> "Turn the dash on, stand near the bike, then tap Connect"
                                 ConnStage.WIFI    -> "Accept the system dialog if it appears"
-                                ConnStage.AUTH    -> "Handshaking with firmware 11.63…"
-                                ConnStage.ERROR   -> ui.errorMessage ?: "See Logcat tag DashSession"
+                                ConnStage.AUTH    -> if (ui.retryAttempt > 0)
+                                    "Handshake attempt ${ui.retryAttempt} of 4 — this is normal"
+                                    else "Securing the link to firmware 11.63…"
+                                ConnStage.ERROR   -> ui.errorMessage
+                                    ?: "Make sure the dash is on and you're beside the bike, then try again."
                                 ConnStage.STREAMING -> ""
                             },
                             color = if (ui.stage == ConnStage.ERROR) Warn else TextMid,
@@ -174,7 +177,7 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                     }
                     if (ui.stage == ConnStage.OFFLINE || ui.stage == ConnStage.ERROR) {
                         NorthstarBtn(
-                            "Connect",
+                            if (ui.stage == ConnStage.ERROR) "Try again" else "Connect",
                             onClick = {
                                 if (hasEssentialPermissions()) vm.connect()
                                 else permissionLauncher.launch(requestedPermissions)

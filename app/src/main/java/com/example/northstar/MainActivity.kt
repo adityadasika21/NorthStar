@@ -34,11 +34,12 @@ class MainActivity : ComponentActivity() {
             }.also { FirebaseAuth.getInstance().addAuthStateListener(it) }
         }
 
-        // Maintenance reminders on app open (fires even if the Garage screen is never opened).
+        // Maintenance + document-expiry reminders on app open (fire even if Garage is never opened).
         Thread {
             com.example.northstar.data.MaintenanceNotifier.check(
-                applicationContext, sync.maintenanceItems(), sync.odometer()
+                applicationContext, sync.maintenanceItems(), sync.odometer().toInt()
             )
+            com.example.northstar.data.MaintenanceNotifier.checkDocuments(applicationContext, sync.documents())
         }.start()
 
         handleIntent(intent)

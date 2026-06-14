@@ -24,6 +24,7 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.plugins.annotation.LineManager
@@ -60,7 +61,10 @@ fun NorthstarMap(
 ) {
     val context = LocalContext.current
     remember { MapLibre.getInstance(context) }
-    val mapView = remember { MapView(context) }
+    // textureMode → render into a TextureView, not a SurfaceView. A SurfaceView is a
+    // separate window that doesn't clip/animate with Compose navigation, so the old map
+    // lingers on screen during the transition; a TextureView composes normally.
+    val mapView = remember { MapView(context, MapLibreMapOptions().textureMode(true)) }
 
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var lineMgr by remember { mutableStateOf<LineManager?>(null) }

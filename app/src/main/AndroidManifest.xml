@@ -22,6 +22,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- In-app updater: download the new APK from GitHub Releases and hand it to the
+         system package installer (the install itself still needs the user's tap + the
+         per-app "install unknown apps" grant). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".NorthstarApplication"
@@ -67,6 +71,17 @@
             android:name=".dash.DashKeepAliveService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
+
+        <!-- Shares stored service invoices (image/PDF) with an external viewer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

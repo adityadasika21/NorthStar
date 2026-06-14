@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -12,6 +15,16 @@ if (project.file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
 
+// Release signing is loaded from a gitignored signing.properties at the repo root (see
+// that file). It points at the stable release keystore — the SAME key every public APK
+// is signed with, so updates install in place. If the file is absent (e.g. a contributor
+// just building locally), the release build falls back to the debug keystore.
+val signingProps = Properties()
+rootProject.file("signing.properties").let { f ->
+    if (f.exists()) f.inputStream().use { signingProps.load(it) }
+}
+val hasReleaseSigning = signingProps.getProperty("storeFile")?.let { File(it).exists() } == true
+
 android {
     namespace = "com.example.northstar"
     compileSdk {
@@ -24,10 +37,21 @@ android {
         applicationId = "com.northstar.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = File(signingProps.getProperty("storeFile"))
+                storePassword = signingProps.getProperty("storePassword")
+                keyAlias = signingProps.getProperty("keyAlias")
+                keyPassword = signingProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -35,10 +59,12 @@ android {
             optimization {
                 enable = false
             }
-            // Hobby/open-source distribution: sign the release with the debug keystore so the
-            // published APK installs by tapping (sideload). Replace with your own release
-            // keystore if you ever ship a signed-by-you build (needed for consistent updates).
-            signingConfig = signingConfigs.getByName("debug")
+            // Hobby/open-source distribution: signed by the stable release keystore (from
+            // signing.properties) so every published APK shares one signature and updates
+            // install in place. Falls back to the debug keystore when signing.properties is
+            // absent (contributors building locally) — that build just can't update users.
+            signingConfig = if (hasReleaseSigning) signingConfigs.getByName("release")
+                            else signingConfigs.getByName("debug")
         }
     }
     compileOptions {

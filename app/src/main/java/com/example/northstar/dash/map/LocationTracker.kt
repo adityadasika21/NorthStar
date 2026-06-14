@@ -66,9 +66,11 @@ class LocationTracker(context: Context) {
             // minDistance=0: keep GPS fixes flowing every second even when parked.
             // With a minimum distance, GPS goes quiet while stationary, its last fix
             // ages out, and a coarse NETWORK fix takes over → the marker drifts.
+            // 500 ms (was 1000): twice as many fixes → fresher position + smoother camera (the
+            // predictor interpolates the gaps). minDistance=0 keeps fixes flowing when parked.
             for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
                 if (lm.isProviderEnabled(provider)) {
-                    lm.requestLocationUpdates(provider, 1_000L, 0f, listener, Looper.getMainLooper())
+                    lm.requestLocationUpdates(provider, 500L, 0f, listener, Looper.getMainLooper())
                 }
             }
             running = true

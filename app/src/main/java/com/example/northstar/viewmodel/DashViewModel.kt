@@ -38,6 +38,7 @@ data class DashUiState(
     val wifiPassword: String = "12345678",  // RE Tripper factory passphrase; rider-overridable
     val destinationName: String? = null,
     val errorMessage: String? = null,
+    val retryAttempt: Int = 0,        // >0 while auto-retrying the flaky auth handshake
     val mapZoom: Int = 19,
     val remainingKm: Double? = null,
     val etaMinutes: Int? = null,
@@ -76,6 +77,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var streamJob: Job? = null
 
     private var userWantsConnection = false
+    private var authAttempts = 0       // bounded auto-retry of the (flaky) auth handshake
 
     // ── Navigation/map state read by the 4 fps frame loop ──
     @Volatile private var destLat: Double? = null
@@ -110,6 +112,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var frameRiderLat: Double? = null
     @Volatile private var frameRiderLng: Double? = null
     @Volatile private var camMoving = false   // drives the dynamic frame rate
+    private var lastMotionMs = 0L             // last time real motion was seen (fps hold-off)
 
     // Stable ETA (Google-like): the raw estimate jitters with instantaneous speed, so we
     // smooth it and only recompute the absolute arrival clock occasionally — no per-frame churn.
@@ -137,8 +140,15 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         private const val MANUAL_IDLE_MS = 8_000L
         private const val FORCE_REDRAW_MS = 2_000L
         private const val SMOOTH_TAU = 0.28      // camera smoothing time constant (s)
-        private const val FPS_MOVING = 24        // buttery while riding
-        private const val FPS_IDLE = 7           // throttle when stopped (saves power)
+        // The Tripper dash decoder is the real limiter: the better-dash reverse-engineering
+        // found it holds ~8–12 fps and "blinks" (drops/stutters) much above that — the stock
+        // RE app streams just 4 fps. Pushing 60 fps overran the decoder and looked LESS smooth.
+        // We sit just above their tested ceiling and let the dead-reckoning predictor interpolate
+        // motion between GPS fixes so each delivered frame still shows smooth movement.
+        private const val FPS_MOVING = 15        // matched to what the dash can decode steadily
+        private const val FPS_IDLE = 8           // throttle only when truly stopped (saves power)
+        private const val MOTION_HOLD_MS = 4_000L // stay at full fps this long after the last motion (rides through brief slow-downs)
+        private const val MAX_AUTH_ATTEMPTS = 4   // the fw 11.63 handshake often needs a couple of tries
     }
 
     /** Project a lat/lng forward [distM] metres along [bearingDeg] (great-circle). */
@@ -181,7 +191,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                             ) session.connect(_ui.value.ssid, wifiManager.network)
                         }
                     }
-                    WifiConnStatus.ERROR -> { _ui.value = _ui.value.copy(errorMessage = ws.error); refreshStage() }
+                    WifiConnStatus.ERROR -> {
+                        // Dash is gone for good (bike powered off / out of range) → the ride is
+                        // over. Save it even though the user never tapped Disconnect.
+                        stopRecording()
+                        _ui.value = _ui.value.copy(errorMessage = ws.error); refreshStage()
+                    }
                     else -> refreshStage()
                 }
             }
@@ -190,7 +205,27 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             session.state.collect { state ->
                 refreshStage()
-                if (state == DashState.READY) startStream()
+                when (state) {
+                    DashState.READY -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0) }; startStream() }
+                    DashState.STREAMING -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0, errorMessage = null) } }
+                    // The handshake to fw 11.63 is flaky — a single failed attempt is normal.
+                    // Auto-retry (WiFi is already up) instead of making the rider re-tap Connect.
+                    DashState.ERROR -> {
+                        if (userWantsConnection &&
+                            wifiManager.state.value.status == WifiConnStatus.CONNECTED &&
+                            authAttempts < MAX_AUTH_ATTEMPTS
+                        ) {
+                            authAttempts++
+                            _ui.update { it.copy(retryAttempt = authAttempts, errorMessage = null) }
+                            delay(1_500)
+                            if (userWantsConnection && wifiManager.state.value.status == WifiConnStatus.CONNECTED)
+                                session.connect(_ui.value.ssid, wifiManager.network)
+                        } else {
+                            _ui.update { it.copy(retryAttempt = 0) }
+                        }
+                    }
+                    else -> {}
+                }
             }
         }
 
@@ -225,7 +260,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     fun connect() {
         userWantsConnection = true
-        _ui.value = _ui.value.copy(errorMessage = null)
+        authAttempts = 0
+        _ui.value = _ui.value.copy(errorMessage = null, retryAttempt = 0)
         DashKeepAliveService.start(getApplication())
         location.start()
         startRecording()
@@ -270,7 +306,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         recorder.start()
         recordJob = viewModelScope.launch {
             location.location.collect { loc ->
-                if (loc != null) recorder.add(loc.latitude, loc.longitude, loc.speed, loc.time)
+                if (loc != null) recorder.add(loc.latitude, loc.longitude, loc.speed, loc.accuracy, loc.time)
             }
         }
     }
@@ -279,7 +315,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         recordJob?.cancel(); recordJob = null
         if (!recorder.isRecording) return
         val ride = recorder.stop() ?: return   // null = trivial session, don't save
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { repo.addRide(ride) }
+        repo.addRide(ride)   // self-scoped on the repo (survives ViewModel teardown)
+        android.util.Log.i("DashViewModel", "Ride saved: ${"%.1f".format(ride.distanceKm)} km, ${ride.durationSec}s")
     }
 
     // ── Dash WiFi config (Settings) ──────────────────────────────────────────
@@ -362,8 +399,18 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Map controls ────────────────────────────────────────────────────────
 
-    fun zoomIn()  { zoom = (zoom + 1).coerceAtMost(20); _ui.value = _ui.value.copy(mapZoom = zoom) }
-    fun zoomOut() { zoom = (zoom - 1).coerceAtLeast(11); _ui.value = _ui.value.copy(mapZoom = zoom) }
+    fun zoomIn()  = setZoom(zoom + 1)
+    fun zoomOut() = setZoom(zoom - 1)
+    private fun setZoom(z: Int) {
+        val clamped = z.coerceIn(11, 20)
+        if (clamped == zoom) return
+        zoom = clamped
+        _ui.value = _ui.value.copy(mapZoom = zoom)
+        // Render the new level next tick (the renderer bridges the gap with scaled
+        // neighbouring-zoom tiles), and warm the real tiles for that level right now so
+        // they sharpen in quickly instead of the map sitting blank.
+        if (camInit) tiles.prefetchZoom(camLat, camLng, zoom)
+    }
     fun panBy(dx: Float, dy: Float) = manualPan(dx, dy)
     fun recenter() {
         panX = 0f; panY = 0f; followMode = true
@@ -542,8 +589,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // doesn't trail the bike between 1 Hz fixes. Only predict while genuinely moving.
         val rider: Pair<Double, Double>? = when {
             loc == null -> null
-            fixSpeed > 1.0f -> {
-                val elapsed = ((System.currentTimeMillis() - fixWallMs) / 1000.0).coerceAtMost(1.5)
+            fixSpeed > 0.5f -> {
+                // Only bridge the gap to the NEXT fix (~0.5 s at 2 Hz). A long horizon (1.5 s)
+                // over-shoots on braking: the predictor flings the camera ahead, then the next
+                // fix shows you slowed, so it snaps back — the "slowing slows the map" jerk.
+                // 0.8 s covers the fix gap with margin while keeping the correction tiny, and the
+                // SMOOTH_TAU low-pass absorbs what's left → no visible yank when decelerating.
+                val elapsed = ((System.currentTimeMillis() - fixWallMs) / 1000.0).coerceAtMost(0.8)
                 project(fixLat, fixLng, fixBearing.toDouble(), fixSpeed * elapsed)
             }
             else -> matchedLat!! to matchedLng!!
@@ -573,9 +625,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // Lock the dash marker to the smoothed centre (map slides under it).
         frameRiderLat = if (rider != null) camLat else null
         frameRiderLng = if (rider != null) camLng else null
-        // Drive the dynamic frame rate: full speed while moving/turning, throttle when idle.
+        // Drive the dynamic frame rate. Key off GPS speed (not tiny per-frame pixel deltas,
+        // which shrink as fps rises and wrongly throttled lane-speed riding) with a hold-off,
+        // so it stays ultra-smooth through slow lanes and only drops to idle when truly stopped.
         val movedM = if (camInit) GeoPoint.distMeters(GeoPoint(prevLat, prevLng), GeoPoint(camLat, camLng)) else 0.0
-        camMoving = movedM > 0.25 || (loc?.speed ?: 0f) > 0.8f
+        if ((loc?.speed ?: 0f) > 0.6f || movedM > 0.6) lastMotionMs = System.currentTimeMillis()
+        camMoving = System.currentTimeMillis() - lastMotionMs < MOTION_HOLD_MS
 
         val centerLat = if (haveTarget) camLat else 0.0
         val centerLng = if (haveTarget) camLng else 0.0

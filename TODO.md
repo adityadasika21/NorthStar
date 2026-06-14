@@ -217,6 +217,71 @@ rider needs zero paid setup. The author never pays regardless of how many instal
   "Continue without signing in" (always) and hides Google sign-in when unconfigured; Settings
   shows local-only / not-signed-in / synced. A rider who omits the json runs 100% local.
 
+## Distribution / updates (2026-06-14) — sustainable update delivery
+
+The first public APK got Reddit traction; updates must reach people, not get lost.
+
+- [x] **Stable release signing.** Promoted the original debug keystore (the key the first
+  public APK shipped with, SHA-1 `80:30:BD:71:…:2D:C8`) to a durable release key, backed up
+  at `~/keystores/northstar-release.jks`. Wired via gitignored `signing.properties` →
+  `app/build.gradle.kts` release `signingConfig` (falls back to debug if the file is absent,
+  so contributors can still build). **Every release shares one signature → updates install in
+  place, no data loss.** Guard this key; losing it forces all users to uninstall+reinstall.
+- [x] **Versioning discipline.** Bump `versionCode` every release (now 2, name 1.1).
+  Updaters key off `versionCode` to detect "newer".
+- [x] **Obtainium path.** README documents adding the repo to Obtainium for auto-update
+  notifications (zero backend) — the recommended way riders stay current.
+- [ ] **Release process (per update):** bump version → `./gradlew :app:assembleRelease` →
+  `gh release create vX.Y dist/northstar-X.Y.apk --notes-file dist/RELEASE-X.Y.md`.
+- [x] **In-app updater ("OTA feel").** `data/UpdateChecker` GETs
+  `api.github.com/repos/adityadasika21/NorthStar/releases/latest` on app open (background),
+  compares the release tag to the installed `versionName` (dotted-number compare), and
+  `ui/components/UpdatePrompt` shows an "Update available" dialog with the changelog + a
+  one-tap Update → downloads the APK to `cacheDir/updates` → hands it to the system installer
+  via the existing FileProvider (`<cache-path name="updates">`). Added `REQUEST_INSTALL_PACKAGES`;
+  routes to the unknown-sources setting if not yet granted; falls back to opening the Releases
+  page if the download fails. Wired at the app root in `AppNavigation`. Only triggers when a
+  release NEWER than the installed build is published.
+- [ ] **CI release build (later).** GitHub Actions to build + attach the APK on tag push.
+  Needs the signing key as a base64 secret — weigh against keeping the key fully offline.
+
+## iOS (much later — only after Android stabilises)
+
+Out of scope for now (CLAUDE.md is Android-only), but noted as a real future direction:
+
+- The **hard part is portable**: the dash is just a WiFi peer speaking the K1G control plane
+  + an H.264/RTP stream. Nothing about it is Android-specific. The reverse-engineered
+  protocol (auth handshake, RTP packetizer, nav TLVs, joystick codes) is the durable asset
+  and would carry over.
+- The **blockers are platform**, and iOS is stricter:
+  - **WiFi auto-join** to the dash SSID: iOS has no real `WifiNetworkSpecifier` equivalent for
+    silently joining an arbitrary AP from a 3rd-party app — likely needs `NEHotspotConfiguration`
+    (user-prompted) and the network has no internet, which iOS dislikes (captive-portal nags).
+  - **Screen-off streaming** — the whole point. iOS background execution is far more
+    restrictive; sustaining an off-screen `VideoToolbox` encode + UDP socket in the background
+    needs careful entitlement work (audio/location background modes as cover) and may fight the OS.
+  - **VideoToolbox** replaces MediaCodec for HW H.264 (fine, equivalent capability).
+- **Approach when the time comes:** factor the protocol/encode/nav core into a shared,
+  platform-agnostic layer (candidate: Kotlin Multiplatform, or a plain spec + a Swift port),
+  keep UI native per platform. Validate WiFi-join + background-encode feasibility on iOS
+  **first** — if either is a hard wall, iOS may be infeasible regardless of effort.
+- **Decision: revisit only after the Android app is stable and the protocol is fully nailed.**
+
+## Community features (END GOAL — long horizon, after the app is solid)
+
+The eventual vision once the core is stable: **community / social riding.** Not now — this is
+the north star, not the next sprint.
+
+- **Shared rides** — share a ride/route with another rider; ride together with shared
+  destination + live presence.
+- **Live location sharing** among a group on a trip (opt-in, privacy-first).
+- **Shared/public routes & POIs** — curated Himalayan routes, fuel/food/viewpoint pins,
+  road-condition notes contributed by riders.
+- **Ride feed / history sharing** — optionally publish a completed ride (track + stats).
+- Implies real backend + identity + privacy model + moderation — a significant step up from
+  today's bring-your-own-Firebase, local-first design. Re-architect deliberately when we get
+  there; don't pre-build for it now (keep the app lean per CLAUDE.md).
+
 ## Cross-cutting / housekeeping
 
 - [ ] Google Sign-In OAuth: confirm the Android OAuth client (package + SHA-1

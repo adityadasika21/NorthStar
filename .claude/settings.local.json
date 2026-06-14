@@ -71,7 +71,14 @@
       "Bash(sudo nmcli connection down \"RE_P0RP_260525\")",
       "Bash(sudo nmcli dev wifi connect \"DVK Ravi Shankar\" ifname wlo1)",
       "Bash(sudo nmcli dev disconnect wlo1)",
-      "Bash(sudo iw dev wlo1 set channel 6)"
+      "Bash(sudo iw dev wlo1 set channel 6)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(pdftotext -layout \"royal-enfield-new-himalayan-450-owners-manual-bs-six-english.pdf\" /tmp/owners.txt)",
+      "Bash(pdftotext -layout \"New Himalayan 450 Service Manual - Euro V.pdf\" /tmp/service.txt)",
+      "Bash(mkdir -p ~/keystores)",
+      "Bash(cp -n ~/.android/debug.keystore ~/keystores/northstar-release.jks)",
+      "Read(//home/aditya/keystores/**)",
+      "Bash(~/Android/Sdk/build-tools/*/apksigner verify *)"
     ]
   }
 }

@@ -49,7 +49,9 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     // Cache dir per tile source so a source switch doesn't serve stale tiles.
     private val diskDir = File(context.cacheDir, "tiles_gmaps").apply { mkdirs() }
-    private val memory = LruCache<String, Bitmap>(120)
+    // Roomy enough to keep the current level PLUS a neighbouring zoom resident during a
+    // zoom transition, so the renderer's scaled-tile fallback always has something to draw.
+    private val memory = LruCache<String, Bitmap>(160)
     private val inflight = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var lastFetchAt = 0L
 
@@ -74,6 +76,23 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
             }
         }
         return null
+    }
+
+    /**
+     * Memory-cache-only peek — render-thread safe and never triggers a load. Used by the
+     * renderer to substitute a cached neighbouring-zoom tile while the exact one loads.
+     */
+    fun getCached(z: Int, x: Int, y: Int): Bitmap? {
+        val max = 1 shl z
+        if (y < 0 || y >= max) return null
+        val xw = ((x % max) + max) % max
+        return memory.get("$z/$xw/$y")
+    }
+
+    /** Warm a single zoom level around a point right now (e.g. right after the rider zooms). */
+    fun prefetchZoom(lat: Double, lng: Double, z: Int, radius: Int = 2) {
+        if (z < 0) return
+        scope.launch(Dispatchers.IO) { prefetchAround(lat, lng, z, radius) }
     }
 
     /** Prefetch tiles around a point (and optionally a straight corridor) into disk. */

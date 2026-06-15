@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,14 +25,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.northstar.data.FuelFillup
-import com.example.northstar.data.MaintenanceItem
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.components.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.GarageUi
-import com.example.northstar.viewmodel.GarageViewModel
-import com.example.northstar.viewmodel.MaintRow
+import com.example.opendash.data.FuelFillup
+import com.example.opendash.data.MaintenanceItem
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.components.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.GarageUi
+import com.example.opendash.viewmodel.GarageViewModel
+import com.example.opendash.viewmodel.MaintRow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -41,12 +41,12 @@ private val dfRow = SimpleDateFormat("MMM d", Locale.getDefault())
 private val dfBar = SimpleDateFormat("d/M", Locale.getDefault())
 
 private fun iconFor(key: String): ImageVector = when (key) {
-    "chain"  -> NorthstarIcons.Chain
-    "drop"   -> NorthstarIcons.Drop
-    "gauge"  -> NorthstarIcons.Gauge
-    "thermo" -> NorthstarIcons.Thermo
-    "fuel"   -> NorthstarIcons.Fuel
-    else     -> NorthstarIcons.Wrench
+    "chain"  -> OpenDashIcons.Chain
+    "drop"   -> OpenDashIcons.Drop
+    "gauge"  -> OpenDashIcons.Gauge
+    "thermo" -> OpenDashIcons.Thermo
+    "fuel"   -> OpenDashIcons.Fuel
+    else     -> OpenDashIcons.Wrench
 }
 
 private fun dueText(remainingKm: Int): String = when {
@@ -77,11 +77,11 @@ fun GarageScreen(
             eyebrow = "Himalayan 450 · ${"%,d".format(ui.odometerKm)} km",
             title = "Garage",
             trailing = {
-                NorthstarBtn("Odometer", onClick = { showOdo = true }, variant = BtnVariant.Ghost, size = BtnSize.Sm)
+                OpenDashBtn("Odometer", onClick = { showOdo = true }, variant = BtnVariant.Ghost, size = BtnSize.Sm)
             },
         )
 
-        NorthstarSegmented(
+        OpenDashSegmented(
             options = listOf("Maintenance", "Fuel diary"),
             selected = tab,
             onSelect = onTabChange,
@@ -122,13 +122,13 @@ private fun MaintenanceTab(ui: GarageUi, onMark: (MaintenanceItem) -> Unit, onLo
         val ridden = (ui.odometerKm - hero.item.lastDoneOdoKm).coerceAtLeast(0)
         val frac = (ridden.toFloat() / hero.item.intervalKm.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
         val tone = toneColor[hero.tone] ?: Gold
-        NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        OpenDashCard(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Eyebrow("Most urgent")
                     Text(hero.item.name, color = TextHi, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = GeistFamily, letterSpacing = (-0.36).sp, modifier = Modifier.padding(top = 5.dp))
                 }
-                NorthstarChip(
+                OpenDashChip(
                     dueText(hero.remainingKm),
                     if (hero.tone == "alert") ChipTone.Alert else if (hero.tone == "warn") ChipTone.Warn else ChipTone.Gold,
                     dot = true,
@@ -145,18 +145,18 @@ private fun MaintenanceTab(ui: GarageUi, onMark: (MaintenanceItem) -> Unit, onLo
                 Box(Modifier.fillMaxWidth(frac).fillMaxHeight().clip(CircleShape).background(Brush.horizontalGradient(listOf(GoldDeep, tone))))
             }
             Spacer(Modifier.height(14.dp))
-            NorthstarBtn("Mark done today", onClick = { onMark(hero.item) }, icon = NorthstarIcons.Check, variant = BtnVariant.Primary, size = BtnSize.Sm, modifier = Modifier.fillMaxWidth())
+            OpenDashBtn("Mark done today", onClick = { onMark(hero.item) }, icon = OpenDashIcons.Check, variant = BtnVariant.Primary, size = BtnSize.Sm, modifier = Modifier.fillMaxWidth())
         }
     }
 
     Eyebrow("Service intervals", Modifier.padding(bottom = 8.dp, start = 4.dp))
 
-    NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+    OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
         if (ui.maint.isEmpty()) {
             Text("No intervals yet — add one below.", color = TextLo, fontSize = 13.sp, modifier = Modifier.padding(14.dp))
         }
         ui.maint.forEachIndexed { i, row ->
-            if (i > 0) NorthstarDivider(Modifier.padding(horizontal = 4.dp))
+            if (i > 0) OpenDashDivider(Modifier.padding(horizontal = 4.dp))
             val color = toneColor[row.tone] ?: Gold
             val fill = (1f - (row.remainingKm.toFloat().coerceAtLeast(0f) / row.item.intervalKm.coerceAtLeast(1).toFloat())).coerceIn(0.06f, 1f)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 12.dp)) {
@@ -181,14 +181,14 @@ private fun MaintenanceTab(ui: GarageUi, onMark: (MaintenanceItem) -> Unit, onLo
 
     Spacer(Modifier.height(14.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        NorthstarBtn("Log a service", onClick = onLog, icon = NorthstarIcons.Check, variant = BtnVariant.Ghost, size = BtnSize.Md, modifier = Modifier.weight(1f))
-        NorthstarBtn("Add interval", onClick = onAdd, icon = NorthstarIcons.Plus, variant = BtnVariant.Ghost, size = BtnSize.Md, modifier = Modifier.weight(1f))
+        OpenDashBtn("Log a service", onClick = onLog, icon = OpenDashIcons.Check, variant = BtnVariant.Ghost, size = BtnSize.Md, modifier = Modifier.weight(1f))
+        OpenDashBtn("Add interval", onClick = onAdd, icon = OpenDashIcons.Plus, variant = BtnVariant.Ghost, size = BtnSize.Md, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun FuelTab(ui: GarageUi, onAdd: () -> Unit, onDelete: (FuelFillup) -> Unit) {
-    NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+    OpenDashCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
             Column {
                 Eyebrow("Avg. efficiency · 30 days")
@@ -202,7 +202,7 @@ private fun FuelTab(ui: GarageUi, onAdd: () -> Unit, onDelete: (FuelFillup) -> U
         val chart = ui.fuel.filter { it.kmpl != null }.take(6).reversed()
         if (chart.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            NorthstarBarChart(
+            OpenDashBarChart(
                 data = chart.map { BarEntry(dfBar.format(Date(it.fill.dateMs)), it.kmpl!!.toFloat()) },
                 height = 108.dp,
                 modifier = Modifier.fillMaxWidth(),
@@ -223,16 +223,16 @@ private fun FuelTab(ui: GarageUi, onAdd: () -> Unit, onDelete: (FuelFillup) -> U
     }
 
     Eyebrow("Fill-ups", Modifier.padding(bottom = 8.dp, start = 4.dp))
-    NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+    OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
         if (ui.fuel.isEmpty()) {
             Text("No fill-ups yet — add your first below.", color = TextLo, fontSize = 13.sp, modifier = Modifier.padding(14.dp))
         }
         ui.fuel.forEachIndexed { i, row ->
-            if (i > 0) NorthstarDivider(Modifier.padding(horizontal = 4.dp))
+            if (i > 0) OpenDashDivider(Modifier.padding(horizontal = 4.dp))
             val f = row.fill
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onDelete(f) }.padding(horizontal = 6.dp, vertical = 12.dp)) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(Surf2).border(1.dp, Line, RoundedCornerShape(11.dp))) {
-                    Icon(NorthstarIcons.Fuel, null, tint = TextMid, modifier = Modifier.size(20.dp))
+                    Icon(OpenDashIcons.Fuel, null, tint = TextMid, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
@@ -248,7 +248,7 @@ private fun FuelTab(ui: GarageUi, onAdd: () -> Unit, onDelete: (FuelFillup) -> U
     }
 
     Spacer(Modifier.height(14.dp))
-    NorthstarBtn("Add fill-up", onClick = onAdd, icon = NorthstarIcons.Plus, variant = BtnVariant.Ghost, size = BtnSize.Md, modifier = Modifier.fillMaxWidth())
+    OpenDashBtn("Add fill-up", onClick = onAdd, icon = OpenDashIcons.Plus, variant = BtnVariant.Ghost, size = BtnSize.Md, modifier = Modifier.fillMaxWidth())
 }
 
 // ── Dialogs ──────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ private fun LogServiceDialog(rows: List<MaintRow>, odo: Int, onMark: (Maintenanc
                         Spacer(Modifier.width(10.dp))
                         Text(row.item.name, color = TextHi, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
                         TextButton(onClick = { onMark(row.item) }) { Text("Done", color = Gold, fontSize = 13.sp) }
-                        Icon(NorthstarIcons.Cross, "delete", tint = TextLo, modifier = Modifier.size(16.dp).clickable { onDelete(row.item) })
+                        Icon(OpenDashIcons.Cross, "delete", tint = TextLo, modifier = Modifier.size(16.dp).clickable { onDelete(row.item) })
                     }
                 }
             }

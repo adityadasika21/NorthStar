@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,10 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.components.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.RouteViewModel
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.components.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.RouteViewModel
 
 @Composable
 fun RouteScreen(
@@ -47,16 +47,16 @@ fun RouteScreen(
 
     val savedList by routeViewModel.saved.collectAsState()
     val ctx = LocalContext.current
-    val voiceManager = remember { com.example.northstar.dash.nav.VoiceManager.get(ctx) }
+    val voiceManager = remember { com.example.opendash.dash.nav.VoiceManager.get(ctx) }
     val voiceMode by voiceManager.mode.collectAsState()
     val voice = when (voiceMode) {
-        com.example.northstar.dash.nav.VoiceMode.OFF   -> "Off"
-        com.example.northstar.dash.nav.VoiceMode.CHIME -> "Chime only"
-        com.example.northstar.dash.nav.VoiceMode.FULL  -> "Full TTS"
+        com.example.opendash.dash.nav.VoiceMode.OFF   -> "Off"
+        com.example.opendash.dash.nav.VoiceMode.CHIME -> "Chime only"
+        com.example.opendash.dash.nav.VoiceMode.FULL  -> "Full TTS"
     }
     var sent by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<com.example.northstar.data.SavedLocation?>(null) }
+    var editing by remember { mutableStateOf<com.example.opendash.data.SavedLocation?>(null) }
 
     LaunchedEffect(sent) {
         if (sent) {
@@ -74,7 +74,7 @@ fun RouteScreen(
                 .background(MapBase),
         ) {
             // Real Google Maps preview — destination pin + route line.
-            NorthstarMap(
+            OpenDashMap(
                 riderLat = null,
                 riderLng = null,
                 dest = dest?.let { d -> if (d.lat != null && d.lng != null) d.lat to d.lng else null },
@@ -95,17 +95,17 @@ fun RouteScreen(
                     )
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
-                NorthstarIconBtn(
-                    NorthstarIcons.ChevronLeft,
+                OpenDashIconBtn(
+                    OpenDashIcons.ChevronLeft,
                     onClick = onBack,
                     size = 40.dp,
                     modifier = Modifier.background(Color(0xB30D0F11), IconBtnShape),
                 )
                 Spacer(Modifier.width(12.dp))
-                NorthstarChip(
+                OpenDashChip(
                     if (routeState.isResolving) "Resolving link…" else "Shared from Google Maps",
                     tone = if (routeState.isResolving) ChipTone.Gold else ChipTone.Neutral,
-                    icon = NorthstarIcons.Share,
+                    icon = OpenDashIcons.Share,
                     modifier = Modifier.background(Color(0xB30D0F11), CircleShape),
                 )
             }
@@ -143,7 +143,7 @@ fun RouteScreen(
                         .clip(RoundedCornerShape(12.dp))
                         .background(GoldTint),
                 ) {
-                    Icon(NorthstarIcons.LocationPin, contentDescription = null, tint = Gold, modifier = Modifier.size(22.dp))
+                    Icon(OpenDashIcons.LocationPin, contentDescription = null, tint = Gold, modifier = Modifier.size(22.dp))
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
@@ -196,28 +196,28 @@ fun RouteScreen(
             ) {
                 Eyebrow("Voice guidance")
                 Icon(
-                    if (voice == "Off") NorthstarIcons.SpeakerOff else NorthstarIcons.Speaker,
+                    if (voice == "Off") OpenDashIcons.SpeakerOff else OpenDashIcons.Speaker,
                     contentDescription = null,
                     tint = if (voice == "Off") TextLo else Gold,
                     modifier = Modifier.size(18.dp),
                 )
             }
 
-            NorthstarSegmented(
+            OpenDashSegmented(
                 options = listOf("Off", "Chime only", "Full TTS"),
                 selected = voice,
                 onSelect = {
                     voiceManager.setMode(when (it) {
-                        "Off"  -> com.example.northstar.dash.nav.VoiceMode.OFF
-                        "Full TTS" -> com.example.northstar.dash.nav.VoiceMode.FULL
-                        else   -> com.example.northstar.dash.nav.VoiceMode.CHIME
+                        "Off"  -> com.example.opendash.dash.nav.VoiceMode.OFF
+                        "Full TTS" -> com.example.opendash.dash.nav.VoiceMode.FULL
+                        else   -> com.example.opendash.dash.nav.VoiceMode.CHIME
                     })
                 },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
             )
 
             val canStart = dest?.lat != null && dest.lng != null && !routeState.isResolving
-            NorthstarBtn(
+            OpenDashBtn(
                 label = when {
                     sent                   -> "Starting navigation…"
                     routeState.isResolving -> "Resolving destination…"
@@ -225,7 +225,7 @@ fun RouteScreen(
                     else                   -> "Start navigation"
                 },
                 onClick = { sent = true },
-                icon = if (sent) NorthstarIcons.Check else NorthstarIcons.Navi,
+                icon = if (sent) OpenDashIcons.Check else OpenDashIcons.Navi,
                 variant = if (sent) BtnVariant.Secondary else BtnVariant.Primary,
                 size = BtnSize.Lg,
                 enabled = !sent && canStart,
@@ -234,10 +234,10 @@ fun RouteScreen(
 
             if (canStart) {
                 Spacer(Modifier.height(10.dp))
-                NorthstarBtn(
+                OpenDashBtn(
                     label = "Save this destination",
                     onClick = { showSave = true },
-                    icon = NorthstarIcons.Pin,
+                    icon = OpenDashIcons.Pin,
                     variant = BtnVariant.Ghost,
                     size = BtnSize.Md,
                     modifier = Modifier.fillMaxWidth(),
@@ -248,9 +248,9 @@ fun RouteScreen(
             if (savedList.isNotEmpty()) {
                 Spacer(Modifier.height(22.dp))
                 Eyebrow("Saved destinations", Modifier.padding(bottom = 6.dp, start = 4.dp))
-                NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+                OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
                     savedList.forEachIndexed { i, loc ->
-                        if (i > 0) NorthstarDivider(Modifier.padding(horizontal = 4.dp))
+                        if (i > 0) OpenDashDivider(Modifier.padding(horizontal = 4.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -262,7 +262,7 @@ fun RouteScreen(
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(GoldTint),
-                            ) { Icon(NorthstarIcons.LocationPin, null, tint = Gold, modifier = Modifier.size(20.dp)) }
+                            ) { Icon(OpenDashIcons.LocationPin, null, tint = Gold, modifier = Modifier.size(20.dp)) }
                             Spacer(Modifier.width(13.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(loc.name, color = TextHi, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily, maxLines = 1)
@@ -273,7 +273,7 @@ fun RouteScreen(
                                 )
                             }
                             Icon(
-                                NorthstarIcons.Edit, "edit", tint = TextLo,
+                                OpenDashIcons.Edit, "edit", tint = TextLo,
                                 modifier = Modifier.size(18.dp).clickable { editing = loc },
                             )
                         }
@@ -318,7 +318,7 @@ private fun SaveLocationDialog(defaultName: String, onSave: (String, String) -> 
 }
 
 @Composable
-private fun EditLocationDialog(loc: com.example.northstar.data.SavedLocation, onSave: (String, String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+private fun EditLocationDialog(loc: com.example.opendash.data.SavedLocation, onSave: (String, String) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(loc.name) }
     var note by remember { mutableStateOf(loc.note) }
     androidx.compose.material3.AlertDialog(

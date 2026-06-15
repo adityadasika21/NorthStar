@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 import android.content.ContentValues
 import android.content.Context
@@ -15,14 +15,14 @@ import java.util.UUID
  * applies remote changes back via the upsert / delete-by-sid methods. All calls are
  * synchronous; callers run them off the main thread.
  */
-class NorthstarDb private constructor(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "northstar.db", null, 4) {
+class OpenDashDb private constructor(context: Context) :
+    SQLiteOpenHelper(context.applicationContext, "opendash.db", null, 4) {
 
     companion object {
-        @Volatile private var instance: NorthstarDb? = null
-        fun get(context: Context): NorthstarDb =
+        @Volatile private var instance: OpenDashDb? = null
+        fun get(context: Context): OpenDashDb =
             instance ?: synchronized(this) {
-                instance ?: NorthstarDb(context).also { instance = it }
+                instance ?: OpenDashDb(context).also { instance = it }
             }
         const val DEFAULT_ODOMETER = 325   // seeded from the bike's current ODO; user-editable
         fun newSid(): String = UUID.randomUUID().toString()

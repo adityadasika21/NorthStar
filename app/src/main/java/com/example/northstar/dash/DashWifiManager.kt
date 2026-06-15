@@ -1,4 +1,4 @@
-package com.example.northstar.dash
+package com.example.opendash.dash
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -83,7 +83,7 @@ class DashWifiManager(
      * Request a WiFi network. Shows a one-time system confirmation dialog.
      *
      * @param prefixMatch when true, [ssid] is treated as a PREFIX and Android offers any
-     *   matching network (e.g. every `RE_*` dash) — this is what makes Northstar work on
+     *   matching network (e.g. every `RE_*` dash) — this is what makes OpenDash work on
      *   any rider's Tripper without hardcoding their SSID. When false, exact-match.
      */
     fun connect(ssid: String, password: String = "", prefixMatch: Boolean = false) {

@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -26,12 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.northstar.data.Ride
-import com.example.northstar.dash.nav.PolylineCodec
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.components.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.RidesViewModel
+import com.example.opendash.data.Ride
+import com.example.opendash.dash.nav.PolylineCodec
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.components.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.RidesViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,7 +66,7 @@ fun RidesScreen(ridesViewModel: RidesViewModel = viewModel()) {
 private fun RideTotals(rides: List<Ride>) {
     val totalKm = rides.sumOf { it.distanceKm }
     val totalSec = rides.sumOf { it.durationSec }
-    NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 18.dp) {
+    OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 18.dp) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Stat("${rides.size}", "rides")
             Stat("%.0f".format(totalKm), "km total")
@@ -89,7 +89,7 @@ private fun RideCard(ride: Ride, onDelete: () -> Unit) {
         if (ride.trackPolyline.isBlank()) emptyList()
         else PolylineCodec.decode(ride.trackPolyline)
     }
-    NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp) {
+    OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp) {
         Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 // Track sketch
@@ -98,7 +98,7 @@ private fun RideCard(ride: Ride, onDelete: () -> Unit) {
                     modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(Surf2),
                 ) {
                     if (track.size >= 2) TrackSketch(track, Modifier.fillMaxSize().padding(8.dp))
-                    else Icon(NorthstarIcons.Route, contentDescription = null, tint = TextLo, modifier = Modifier.size(22.dp))
+                    else Icon(OpenDashIcons.Route, contentDescription = null, tint = TextLo, modifier = Modifier.size(22.dp))
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
@@ -120,7 +120,7 @@ private fun RideCard(ride: Ride, onDelete: () -> Unit) {
                     modifier = Modifier.size(34.dp).clip(CircleShape).background(Surf2)
                         .clickable { onDelete() },
                 ) {
-                    Icon(NorthstarIcons.X, contentDescription = "Delete ride", tint = TextLo, modifier = Modifier.size(16.dp))
+                    Icon(OpenDashIcons.X, contentDescription = "Delete ride", tint = TextLo, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -136,7 +136,7 @@ private fun MiniStat(value: String, label: String) {
 }
 
 @Composable
-private fun TrackSketch(points: List<com.example.northstar.dash.nav.GeoPoint>, modifier: Modifier) {
+private fun TrackSketch(points: List<com.example.opendash.dash.nav.GeoPoint>, modifier: Modifier) {
     Canvas(modifier) {
         val minLat = points.minOf { it.lat }; val maxLat = points.maxOf { it.lat }
         val minLng = points.minOf { it.lng }; val maxLng = points.maxOf { it.lng }
@@ -161,13 +161,13 @@ private fun TrackSketch(points: List<com.example.northstar.dash.nav.GeoPoint>, m
 
 @Composable
 private fun EmptyRides() {
-    NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 28.dp) {
+    OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 28.dp) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(56.dp).clip(CircleShape).background(Surf2),
             ) {
-                Icon(NorthstarIcons.Route, contentDescription = null, tint = TextLo, modifier = Modifier.size(26.dp))
+                Icon(OpenDashIcons.Route, contentDescription = null, tint = TextLo, modifier = Modifier.size(26.dp))
             }
             Spacer(Modifier.height(14.dp))
             Text("No rides recorded yet", color = TextHi, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily)

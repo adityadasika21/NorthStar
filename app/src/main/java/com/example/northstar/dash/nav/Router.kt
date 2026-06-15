@@ -1,4 +1,4 @@
-package com.example.northstar.dash.nav
+package com.example.opendash.dash.nav
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +15,7 @@ import java.net.URL
 object Router {
     private const val TAG = "Router"
     private const val BASE = "https://router.project-osrm.org/route/v1/driving"
-    private const val UA = "Northstar/1.0 (personal motorcycle nav; single user)"
+    private const val UA = "OpenDash/1.1 (personal motorcycle nav; single user)"
 
     suspend fun route(from: GeoPoint, to: GeoPoint): Route? = withContext(Dispatchers.IO) {
         val url = "$BASE/${from.lng},${from.lat};${to.lng},${to.lat}" +

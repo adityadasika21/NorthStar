@@ -1,4 +1,4 @@
-package com.example.northstar.viewmodel
+package com.example.opendash.viewmodel
 
 import android.annotation.SuppressLint
 import android.app.Application
@@ -8,11 +8,11 @@ import android.location.LocationManager
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.northstar.data.SharedLocation
-import com.example.northstar.dash.nav.GeoPoint
-import com.example.northstar.dash.nav.Route
-import com.example.northstar.dash.nav.Router
-import com.example.northstar.util.LocationParser
+import com.example.opendash.data.SharedLocation
+import com.example.opendash.dash.nav.GeoPoint
+import com.example.opendash.dash.nav.Route
+import com.example.opendash.dash.nav.Router
+import com.example.opendash.util.LocationParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,9 +40,9 @@ class RouteViewModel(app: Application) : AndroidViewModel(app) {
     val state = _state.asStateFlow()
 
     private val lm = app.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    private val repo = com.example.northstar.data.SyncRepository.get(app)
+    private val repo = com.example.opendash.data.SyncRepository.get(app)
 
-    private val _saved = MutableStateFlow<List<com.example.northstar.data.SavedLocation>>(emptyList())
+    private val _saved = MutableStateFlow<List<com.example.opendash.data.SavedLocation>>(emptyList())
     /** Saved destinations the rider can tap to load + navigate again. */
     val saved = _saved.asStateFlow()
 
@@ -64,14 +64,14 @@ class RouteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { withContext(Dispatchers.IO) { repo.addSaved(name.ifBlank { d.name }, lat, lng, note) } }
     }
 
-    fun renameSaved(loc: com.example.northstar.data.SavedLocation, name: String, note: String) =
+    fun renameSaved(loc: com.example.opendash.data.SavedLocation, name: String, note: String) =
         viewModelScope.launch { withContext(Dispatchers.IO) { repo.renameSaved(loc, name, note) } }
 
-    fun deleteSaved(loc: com.example.northstar.data.SavedLocation) =
+    fun deleteSaved(loc: com.example.opendash.data.SavedLocation) =
         viewModelScope.launch { withContext(Dispatchers.IO) { repo.deleteSaved(loc) } }
 
     /** Load a saved destination into the route preview (compute route; stay on the page). */
-    fun selectSaved(loc: com.example.northstar.data.SavedLocation) {
+    fun selectSaved(loc: com.example.opendash.data.SavedLocation) {
         _state.value = RouteState(
             destination = SharedLocation(name = loc.name, lat = loc.lat, lng = loc.lng),
             isResolving = false,

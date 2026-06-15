@@ -1,4 +1,4 @@
-package com.example.northstar.dash.video
+package com.example.opendash.dash.video
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -8,7 +8,7 @@ import android.graphics.Movie
 import android.graphics.Paint
 import android.graphics.Rect
 import android.media.MediaMetadataRetriever
-import com.example.northstar.data.DashWallpaperKind
+import com.example.opendash.data.DashWallpaperKind
 
 class DashIdleRenderer {
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(13, 15, 16) }

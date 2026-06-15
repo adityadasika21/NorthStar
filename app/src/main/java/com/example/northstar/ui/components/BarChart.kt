@@ -1,4 +1,4 @@
-package com.example.northstar.ui.components
+package com.example.opendash.ui.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,12 +13,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.northstar.ui.theme.*
+import com.example.opendash.ui.theme.*
 
 data class BarEntry(val label: String, val value: Float)
 
 @Composable
-fun NorthstarBarChart(
+fun OpenDashBarChart(
     data: List<BarEntry>,
     modifier: Modifier = Modifier,
     height: Dp = 108.dp,

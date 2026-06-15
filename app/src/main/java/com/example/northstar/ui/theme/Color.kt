@@ -1,4 +1,4 @@
-package com.example.northstar.ui.theme
+package com.example.opendash.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

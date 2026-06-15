@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 data class SharedLocation(
     val name: String,

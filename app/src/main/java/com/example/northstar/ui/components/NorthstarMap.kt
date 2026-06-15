@@ -1,4 +1,4 @@
-package com.example.northstar.ui.components
+package com.example.opendash.ui.components
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.example.northstar.dash.nav.GeoPoint
+import com.example.opendash.dash.nav.GeoPoint
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -47,7 +47,7 @@ private const val DEST_ICON = "dest-pin"
  * rider chevron; default follows the rider north-up.
  */
 @Composable
-fun NorthstarMap(
+fun OpenDashMap(
     riderLat: Double?,
     riderLng: Double?,
     dest: Pair<Double, Double>?,

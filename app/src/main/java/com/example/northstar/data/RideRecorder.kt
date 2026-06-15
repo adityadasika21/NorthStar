@@ -1,7 +1,7 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
-import com.example.northstar.dash.nav.GeoPoint
-import com.example.northstar.dash.nav.PolylineCodec
+import com.example.opendash.dash.nav.GeoPoint
+import com.example.opendash.dash.nav.PolylineCodec
 
 /**
  * Accumulates GPS fixes for one ride (a connect→disconnect dash session) and produces a
@@ -55,7 +55,7 @@ class RideRecorder {
         val avg = if (durationS > 0) distanceM / durationS else 0.0
         val first = points.first(); val lastPt = points.last()
         return Ride(
-            sid = NorthstarDb.newSid(),
+            sid = OpenDashDb.newSid(),
             startMs = startMs, endMs = end,
             distanceMeters = distanceM, durationSec = durationS,
             avgSpeedMps = avg, maxSpeedMps = maxSpeed,

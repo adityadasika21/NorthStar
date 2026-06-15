@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -28,11 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.components.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.ConnStage
-import com.example.northstar.viewmodel.DashViewModel
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.components.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.ConnStage
+import com.example.opendash.viewmodel.DashViewModel
 import kotlinx.coroutines.delay
 
 @Composable
@@ -124,17 +124,17 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (streaming && ui.thermal != "OK") {
-                        NorthstarChip(
+                        OpenDashChip(
                             ui.thermal,
                             if (ui.thermal == "Warm") ChipTone.Warn else ChipTone.Alert,
                         )
                     }
                     when (ui.stage) {
-                        ConnStage.STREAMING -> NorthstarChip("LIVE", ChipTone.Gold, dot = true)
+                        ConnStage.STREAMING -> OpenDashChip("LIVE", ChipTone.Gold, dot = true)
                         ConnStage.WIFI,
-                        ConnStage.AUTH      -> NorthstarChip("Connecting…", ChipTone.Neutral)
-                        ConnStage.ERROR     -> NorthstarChip("Error", ChipTone.Alert)
-                        ConnStage.OFFLINE   -> NorthstarChip("Offline", ChipTone.Off)
+                        ConnStage.AUTH      -> OpenDashChip("Connecting…", ChipTone.Neutral)
+                        ConnStage.ERROR     -> OpenDashChip("Error", ChipTone.Alert)
+                        ConnStage.OFFLINE   -> OpenDashChip("Offline", ChipTone.Off)
                     }
                 }
             },
@@ -142,7 +142,7 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
 
         // Single connection card (hidden once streaming)
         if (!streaming) {
-            NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+            OpenDashCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -173,18 +173,18 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                         )
                     }
                     if (ui.stage == ConnStage.OFFLINE || ui.stage == ConnStage.ERROR) {
-                        NorthstarBtn(
+                        OpenDashBtn(
                             "Connect",
                             onClick = {
                                 if (hasEssentialPermissions()) vm.connect()
                                 else permissionLauncher.launch(requestedPermissions)
                             },
-                            icon = NorthstarIcons.Wifi,
+                            icon = OpenDashIcons.Wifi,
                             variant = BtnVariant.Primary,
                             size = BtnSize.Sm,
                         )
                     } else {
-                        NorthstarBtn(
+                        OpenDashBtn(
                             "Cancel",
                             onClick = { vm.disconnect() },
                             variant = BtnVariant.Ghost,
@@ -230,7 +230,7 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                     .border(6.dp, Color(0xFF0D0F10), CircleShape)
                     .border(2.dp, Line2, CircleShape),
             ) {
-                NorthstarMap(
+                OpenDashMap(
                     riderLat = ui.riderLat,
                     riderLng = ui.riderLng,
                     dest = ui.destLatLng,
@@ -254,7 +254,7 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                     .border(1.dp, if (ui.offRoute) Warn else GoldTint2, RoundedCornerShape(13.dp))
                     .padding(horizontal = 14.dp, vertical = 11.dp),
             ) {
-                Icon(NorthstarIcons.Navi, null, tint = if (ui.offRoute) Warn else Gold, modifier = Modifier.size(20.dp))
+                Icon(OpenDashIcons.Navi, null, tint = if (ui.offRoute) Warn else Gold, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(11.dp))
                 Text(
                     if (ui.offRoute) "Off route — rerouting…" else mv,
@@ -309,14 +309,14 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(NorthstarIcons.Cross, null, tint = if (adjustMode) Gold else TextMid, modifier = Modifier.size(20.dp))
+                Icon(OpenDashIcons.Cross, null, tint = if (adjustMode) Gold else TextMid, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(11.dp))
                 Column {
                     Text("Map adjust mode", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily)
                     Text("Mirrors the bike joystick", color = TextLo, fontSize = 11.5.sp, modifier = Modifier.padding(top = 1.dp))
                 }
             }
-            NorthstarToggle(on = adjustMode, onChange = { adjustMode = it })
+            OpenDashToggle(on = adjustMode, onChange = { adjustMode = it })
         }
 
         Spacer(Modifier.height(10.dp))
@@ -333,14 +333,14 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(NorthstarIcons.Navi, null, tint = if (ui.headingUp) Gold else TextMid, modifier = Modifier.size(20.dp))
+                Icon(OpenDashIcons.Navi, null, tint = if (ui.headingUp) Gold else TextMid, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(11.dp))
                 Column {
                     Text("Heading-up map", color = TextHi, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily)
                     Text(if (ui.headingUp) "Rotates to travel direction" else "North-up", color = TextLo, fontSize = 11.5.sp, modifier = Modifier.padding(top = 1.dp))
                 }
             }
-            NorthstarToggle(on = ui.headingUp, onChange = { vm.toggleHeadingUp() })
+            OpenDashToggle(on = ui.headingUp, onChange = { vm.toggleHeadingUp() })
         }
 
         Spacer(Modifier.height(16.dp))
@@ -372,20 +372,20 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                NorthstarIconBtn(NorthstarIcons.Plus,  onClick = { vm.zoomIn() },  size = 52.dp)
+                OpenDashIconBtn(OpenDashIcons.Plus,  onClick = { vm.zoomIn() },  size = 52.dp)
                 Text("z${ui.mapZoom}", color = Gold, fontSize = 12.sp, fontFamily = GeistMonoFamily, fontWeight = FontWeight.SemiBold)
-                NorthstarIconBtn(NorthstarIcons.Minus, onClick = { vm.zoomOut() }, size = 52.dp)
-                NorthstarIconBtn(NorthstarIcons.Recenter, onClick = { vm.recenter(); pan = Offset.Zero }, size = 52.dp, active = true)
+                OpenDashIconBtn(OpenDashIcons.Minus, onClick = { vm.zoomOut() }, size = 52.dp)
+                OpenDashIconBtn(OpenDashIcons.Recenter, onClick = { vm.recenter(); pan = Offset.Zero }, size = 52.dp, active = true)
             }
         }
 
         // Exit navigation → free roam (keeps streaming, just drops the route)
         if (streaming && ui.destinationName != null) {
             Spacer(Modifier.height(16.dp))
-            NorthstarBtn(
+            OpenDashBtn(
                 "Exit navigation",
                 onClick = { vm.exitNavigation() },
-                icon = NorthstarIcons.Navi,
+                icon = OpenDashIcons.Navi,
                 variant = BtnVariant.Ghost,
                 size = BtnSize.Md,
                 modifier = Modifier.fillMaxWidth(),
@@ -395,10 +395,10 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
         // Disconnect button when streaming
         if (streaming) {
             Spacer(Modifier.height(20.dp))
-            NorthstarBtn(
+            OpenDashBtn(
                 "Disconnect",
                 onClick = { vm.disconnect() },
-                icon = NorthstarIcons.Power,
+                icon = OpenDashIcons.Power,
                 variant = BtnVariant.Danger,
                 size = BtnSize.Md,
                 modifier = Modifier.fillMaxWidth(),

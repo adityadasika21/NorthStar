@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -20,11 +20,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.components.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.ConnectionState
-import com.example.northstar.viewmodel.RouteViewModel
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.components.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.ConnectionState
+import com.example.opendash.viewmodel.RouteViewModel
 
 @Composable
 fun HomeScreen(
@@ -57,11 +57,11 @@ fun HomeScreen(
     ) {
         ScreenHeader(
             wordmark = true,
-            trailing = { NorthstarIconBtn(NorthstarIcons.Gear, onClick = { onNavigate("settings") }) },
+            trailing = { OpenDashIconBtn(OpenDashIcons.Gear, onClick = { onNavigate("settings") }) },
         )
 
         // Connection hero card
-        NorthstarCard(
+        OpenDashCard(
             glow = conn == ConnectionState.Connected,
             padding = 20.dp,
             modifier = Modifier.fillMaxWidth(),
@@ -103,7 +103,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(12.dp))
 
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        NorthstarChip("Himalayan 450", ChipTone.Gold, icon = NorthstarIcons.Motor)
+                        OpenDashChip("Himalayan 450", ChipTone.Gold, icon = OpenDashIcons.Motor)
                     }
                 }
             }
@@ -111,18 +111,18 @@ fun HomeScreen(
 
         Spacer(Modifier.height(18.dp))
 
-        NorthstarBtn(
+        OpenDashBtn(
             "Start navigation", onClick = { onNavigate("route") },
-            icon = NorthstarIcons.Navi, variant = BtnVariant.Primary, size = BtnSize.Lg,
+            icon = OpenDashIcons.Navi, variant = BtnVariant.Primary, size = BtnSize.Lg,
             modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(Modifier.height(10.dp))
 
-        NorthstarBtn(
+        OpenDashBtn(
             if (conn == ConnectionState.Connected) "Open dash view" else "Connect to dash",
             onClick = { onNavigate("dash") },
-            icon = if (conn == ConnectionState.Connected) NorthstarIcons.Dash else NorthstarIcons.Wifi,
+            icon = if (conn == ConnectionState.Connected) OpenDashIcons.Dash else OpenDashIcons.Wifi,
             variant = if (conn == ConnectionState.Connected) BtnVariant.Secondary else BtnVariant.Primary,
             size = BtnSize.Md,
             modifier = Modifier.fillMaxWidth(),
@@ -133,18 +133,18 @@ fun HomeScreen(
         Eyebrow("Saved destinations", Modifier.padding(bottom = 6.dp, start = 4.dp))
 
         if (saved.isEmpty()) {
-            NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp) {
+            OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp) {
                 Text(
                     "No saved destinations yet. Share a place from Google Maps, then tap “Save this destination”.",
                     color = TextLo, fontSize = 13.sp,
                 )
             }
         } else {
-            NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+            OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
                 saved.forEachIndexed { i, loc ->
-                    if (i > 0) NorthstarDivider(Modifier.padding(horizontal = 4.dp))
-                    NorthstarRow(
-                        loc.name, icon = NorthstarIcons.LocationPin,
+                    if (i > 0) OpenDashDivider(Modifier.padding(horizontal = 4.dp))
+                    OpenDashRow(
+                        loc.name, icon = OpenDashIcons.LocationPin,
                         sub = loc.note.ifBlank { "%.4f, %.4f".format(loc.lat, loc.lng) },
                         trailingIcon = true,
                         onClick = { routeViewModel.selectSaved(loc); onNavigate("route") },

@@ -1,4 +1,4 @@
-package com.example.northstar.dash.map
+package com.example.opendash.dash.map
 
 import android.graphics.Canvas
 import android.graphics.Color
@@ -9,7 +9,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
-import com.example.northstar.dash.nav.GeoPoint
+import com.example.opendash.dash.nav.GeoPoint
 
 /**
  * Draws the navigation frame for the Tripper Dash (526 × 300).
@@ -213,7 +213,7 @@ class MapRenderer(private val tiles: TileProvider) {
 
         // ── Standby when nothing to show (dark text on the light map bg) ──
         if (f.riderLat == null && f.destLat == null) {
-            val msg = "NORTHSTAR · waiting for GPS"
+            val msg = "OpenDash · waiting for GPS"
             standbyPaint.getTextBounds(msg, 0, msg.length, textBounds)
             canvas.drawText(msg, (w - textBounds.width()) / 2f, h / 2f, standbyPaint)
         }

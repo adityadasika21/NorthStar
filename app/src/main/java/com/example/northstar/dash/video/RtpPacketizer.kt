@@ -1,4 +1,4 @@
-package com.example.northstar.dash.video
+package com.example.opendash.dash.video
 
 import java.util.Random
 

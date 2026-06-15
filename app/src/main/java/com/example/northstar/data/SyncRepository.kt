@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 import android.content.Context
 import android.util.Log
@@ -35,7 +35,7 @@ class SyncRepository private constructor(context: Context) {
             instance ?: synchronized(this) { instance ?: SyncRepository(context.applicationContext).also { instance = it } }
     }
 
-    private val db = NorthstarDb.get(context)
+    private val db = OpenDashDb.get(context)
     // Firebase is optional (bring-your-own-project). When no google-services.json was
     // bundled, these stay null and every mirror/listen call is a no-op — the app runs
     // fully local. See [FirebaseGate].
@@ -66,7 +66,7 @@ class SyncRepository private constructor(context: Context) {
 
     fun addFuel(litres: Double, cost: Double, odoKm: Int, location: String) {
         val prevOdo = db.odometer()
-        val f = FuelFillup(sid = NorthstarDb.newSid(), dateMs = System.currentTimeMillis(),
+        val f = FuelFillup(sid = OpenDashDb.newSid(), dateMs = System.currentTimeMillis(),
             litres = litres, cost = cost, odometerKm = odoKm, location = location)
         db.upsertFuel(f); pushFuel(f)
         if (odoKm > prevOdo) { db.setOdometer(odoKm); pushOdometer(odoKm) }
@@ -75,7 +75,7 @@ class SyncRepository private constructor(context: Context) {
     fun deleteFuel(f: FuelFillup) { db.deleteFuelBySid(f.sid); userDoc()?.collection("fuel")?.document(f.sid)?.delete(); bump() }
 
     fun addMaintenance(name: String, icon: String, intervalKm: Int, lastDoneOdoKm: Int) {
-        val m = MaintenanceItem(sid = NorthstarDb.newSid(), name = name, iconKey = icon,
+        val m = MaintenanceItem(sid = OpenDashDb.newSid(), name = name, iconKey = icon,
             intervalKm = intervalKm, lastDoneOdoKm = lastDoneOdoKm, lastDoneDateMs = System.currentTimeMillis())
         db.upsertMaintenance(m); pushMaintenance(m); bump()
     }
@@ -86,7 +86,7 @@ class SyncRepository private constructor(context: Context) {
     fun deleteMaintenance(m: MaintenanceItem) { db.deleteMaintenanceBySid(m.sid); userDoc()?.collection("maintenance")?.document(m.sid)?.delete(); bump() }
 
     fun addSaved(name: String, lat: Double, lng: Double, note: String) {
-        val s = SavedLocation(sid = NorthstarDb.newSid(), name = name, lat = lat, lng = lng, note = note)
+        val s = SavedLocation(sid = OpenDashDb.newSid(), name = name, lat = lat, lng = lng, note = note)
         db.upsertSaved(s); pushSaved(s); bump()
     }
     fun renameSaved(s: SavedLocation, name: String, note: String) {

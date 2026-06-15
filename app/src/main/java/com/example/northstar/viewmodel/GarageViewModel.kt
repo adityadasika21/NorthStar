@@ -1,11 +1,11 @@
-package com.example.northstar.viewmodel
+package com.example.opendash.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.northstar.data.FuelFillup
-import com.example.northstar.data.MaintenanceItem
-import com.example.northstar.data.SyncRepository
+import com.example.opendash.data.FuelFillup
+import com.example.opendash.data.MaintenanceItem
+import com.example.opendash.data.SyncRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,7 +41,7 @@ class GarageViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = ui
         // Buzz if a service just crossed into "due" (de-duped inside the notifier).
         withContext(Dispatchers.IO) {
-            com.example.northstar.data.MaintenanceNotifier.check(getApplication(), ui.maint.map { it.item }, ui.odometerKm)
+            com.example.opendash.data.MaintenanceNotifier.check(getApplication(), ui.maint.map { it.item }, ui.odometerKm)
         }
     }
 

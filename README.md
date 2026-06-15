@@ -1,8 +1,8 @@
-# Northstar
+# OpenDash
 
 **Low-power motorcycle navigation for the Royal Enfield Tripper Dash — with the phone screen off.**
 
-Northstar is an open-source Android app for the **Royal Enfield Himalayan 450**. It projects turn-by-turn navigation onto the bike's round **Tripper TFT dash** without cooking the phone in your tank bag.
+OpenDash is an open-source Android app for the **Royal Enfield Himalayan 450**. It projects turn-by-turn navigation onto the bike's round **Tripper TFT dash** without cooking the phone in your tank bag.
 
 > ⚠️ Independent, community project. **Not affiliated with, endorsed by, or supported by Royal Enfield.** The dash protocol is reverse-engineered and unofficial — use at your own risk.
 
@@ -12,7 +12,7 @@ Northstar is an open-source Android app for the **Royal Enfield Himalayan 450**.
 
 The official Royal Enfield app mirrors Google Maps to the dash by **screen-projection** — it keeps the phone's OLED lit and streams what's on screen. On a long ride in the sun that overheats the phone and drains the battery fast.
 
-Northstar takes a different approach:
+OpenDash takes a different approach:
 
 > It renders the map **off-screen**, hardware-encodes it to **H.264**, and streams it to the dash over the bike's WiFi — so the phone screen can stay **completely OFF** the entire ride.
 
@@ -46,7 +46,7 @@ Google Maps share ─▶ route (OSRM) ─▶ off-screen map render (Canvas)
         (K1G control plane over UDP broadcast :2000  ·  RSA-1024 + AES-256 auth)
 ```
 
-The dash speaks an undocumented binary protocol ("K1G"): a stateful RSA/AES handshake, then it decodes an H.264/RTP stream over UDP. Northstar implements the control plane and auth in Kotlin and feeds the dash a map it renders itself — the dash doesn't care what produces the video.
+The dash speaks an undocumented binary protocol ("K1G"): a stateful RSA/AES handshake, then it decodes an H.264/RTP stream over UDP. OpenDash implements the control plane and auth in Kotlin and feeds the dash a map it renders itself — the dash doesn't care what produces the video.
 
 The control-plane work builds on the excellent reverse-engineering in [**better-dash**](https://github.com/norbertFeron/better-dash) as a reference.
 
@@ -64,7 +64,7 @@ The control-plane work builds on the excellent reverse-engineering in [**better-
 
 ## Download
 
-**📦 Grab the latest APK from [Releases](https://github.com/adityadasika21/NorthStar/releases/latest)** and sideload it (you'll need to allow "install unknown apps"). No account or setup required to try it.
+**📦 Grab the latest APK from [Releases](https://github.com/subtlesayak/open-dash/releases/latest)** and sideload it (you'll need to allow "install unknown apps"). No account or setup required to try it.
 
 > Heads-up: it's signed with a debug key for now, so Android may show an "unverified app" warning on install — that's expected for a community build.
 
@@ -73,8 +73,8 @@ The control-plane work builds on the excellent reverse-engineering in [**better-
 ## Building it yourself
 
 ```bash
-git clone https://github.com/adityadasika21/NorthStar.git
-cd NorthStar
+git clone https://github.com/subtlesayak/open-dash.git
+cd open-dash
 ./gradlew :app:assembleDebug
 ```
 

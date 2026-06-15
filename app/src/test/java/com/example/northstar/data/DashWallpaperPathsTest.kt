@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

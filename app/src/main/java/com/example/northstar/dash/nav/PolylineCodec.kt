@@ -1,4 +1,4 @@
-package com.example.northstar.dash.nav
+package com.example.opendash.dash.nav
 
 /** Decoder for the Google/OSRM encoded-polyline format (precision 5 by default). */
 object PolylineCodec {

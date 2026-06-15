@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Capture Northstar dash debug logs from the phone into dash.log
+# Capture OpenDash dash debug logs from the phone into dash.log
 set -e
 ADB="$HOME/Android/Sdk/platform-tools/adb"
 PHONE=00015356O000598

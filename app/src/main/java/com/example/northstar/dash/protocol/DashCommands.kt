@@ -1,4 +1,4 @@
-package com.example.northstar.dash.protocol
+package com.example.opendash.dash.protocol
 
 import java.io.ByteArrayOutputStream
 

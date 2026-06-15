@@ -1,4 +1,4 @@
-package com.example.northstar
+package com.example.opendash
 
 import org.junit.Test
 

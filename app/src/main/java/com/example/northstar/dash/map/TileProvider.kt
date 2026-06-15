@@ -1,4 +1,4 @@
-package com.example.northstar.dash.map
+package com.example.opendash.dash.map
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -8,7 +8,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Log
 import android.util.LruCache
-import com.example.northstar.dash.nav.GeoPoint
+import com.example.opendash.dash.nav.GeoPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

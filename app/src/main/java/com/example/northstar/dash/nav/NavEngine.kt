@@ -1,4 +1,4 @@
-package com.example.northstar.dash.nav
+package com.example.opendash.dash.nav
 
 /**
  * Tracks the rider's progress along a [Route]: where they are on the line, the

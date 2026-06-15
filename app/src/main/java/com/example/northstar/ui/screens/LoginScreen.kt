@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -24,10 +24,10 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
-import com.example.northstar.ui.components.CircularDash
-import com.example.northstar.ui.components.BtnShape
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.AuthViewModel
+import com.example.opendash.ui.components.CircularDash
+import com.example.opendash.ui.components.BtnShape
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.AuthViewModel
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.launch
@@ -108,7 +108,7 @@ fun LoginScreen(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "NORTHSTAR",
+                        "OpenDash",
                         color = TextHi,
                         fontFamily = GeistMonoFamily,
                         fontWeight = FontWeight.Bold,

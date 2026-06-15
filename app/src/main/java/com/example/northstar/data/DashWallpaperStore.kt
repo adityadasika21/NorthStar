@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -8,7 +8,7 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.graphics.ImageDecoder
-import com.example.northstar.dash.video.DashEncoder
+import com.example.opendash.dash.video.DashEncoder
 import java.io.File
 import java.util.Locale
 

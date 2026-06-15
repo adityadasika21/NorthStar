@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

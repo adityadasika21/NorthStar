@@ -1,4 +1,4 @@
-package com.example.northstar.ui.components
+package com.example.opendash.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.northstar.ui.theme.*
+import com.example.opendash.ui.theme.*
 
 // ---- Shape constants ----
 val CardShape    = RoundedCornerShape(8.dp)
@@ -52,7 +52,7 @@ val IconBtnShape = RoundedCornerShape(8.dp)
 
 // ---- Card ----
 @Composable
-fun NorthstarCard(
+fun OpenDashCard(
     modifier: Modifier = Modifier,
     glow: Boolean = false,
     padding: Dp = 18.dp,
@@ -83,7 +83,7 @@ fun NorthstarCard(
 }
 
 @Composable
-fun NorthstarSurfaceCard(
+fun OpenDashSurfaceCard(
     modifier: Modifier = Modifier,
     padding: Dp = 18.dp,
     content: @Composable ColumnScope.() -> Unit,
@@ -103,7 +103,7 @@ enum class BtnVariant { Primary, Secondary, Ghost, Danger }
 enum class BtnSize { Lg, Md, Sm }
 
 @Composable
-fun NorthstarBtn(
+fun OpenDashBtn(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -179,7 +179,7 @@ fun NorthstarBtn(
 
 // ---- Icon button (square rounded) ----
 @Composable
-fun NorthstarIconBtn(
+fun OpenDashIconBtn(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -204,7 +204,7 @@ fun NorthstarIconBtn(
 enum class ChipTone { Gold, Warn, Alert, Off, Neutral }
 
 @Composable
-fun NorthstarChip(
+fun OpenDashChip(
     label: String,
     tone: ChipTone = ChipTone.Neutral,
     dot: Boolean = false,
@@ -252,7 +252,7 @@ fun NorthstarChip(
 
 // ---- Toggle ----
 @Composable
-fun NorthstarToggle(on: Boolean, onChange: (Boolean) -> Unit) {
+fun OpenDashToggle(on: Boolean, onChange: (Boolean) -> Unit) {
     Switch(
         checked = on,
         onCheckedChange = onChange,
@@ -270,7 +270,7 @@ fun NorthstarToggle(on: Boolean, onChange: (Boolean) -> Unit) {
 // ---- Segmented control ----
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NorthstarSegmented(
+fun OpenDashSegmented(
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
@@ -305,7 +305,7 @@ fun NorthstarSegmented(
 
 // ---- Divider ----
 @Composable
-fun NorthstarDivider(modifier: Modifier = Modifier) {
+fun OpenDashDivider(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(Line))
 }
 
@@ -327,7 +327,7 @@ fun Eyebrow(text: String, modifier: Modifier = Modifier) {
 enum class IconTone { Neutral, Gold, Warn, Alert }
 
 @Composable
-fun NorthstarRow(
+fun OpenDashRow(
     title: String,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
@@ -419,7 +419,7 @@ fun ScreenHeader(
             .defaultMinSize(minHeight = 44.dp),
     ) {
         if (onBack != null) {
-            NorthstarIconBtn(
+            OpenDashIconBtn(
                 icon = Icons.Outlined.ChevronLeft,
                 onClick = onBack,
                 modifier = Modifier.padding(end = 12.dp),
@@ -429,7 +429,7 @@ fun ScreenHeader(
             if (wordmark) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "NORTHSTAR",
+                        "OpenDash",
                         color = TextHi, fontFamily = GeistMonoFamily,
                         fontWeight = FontWeight.Bold, fontSize = 21.sp,
                         letterSpacing = 0.14.sp,

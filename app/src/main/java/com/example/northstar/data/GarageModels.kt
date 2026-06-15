@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 /** A single fuel fill-up. Mileage (km/l) is derived from the odometer gap to the prior fill. */
 data class FuelFillup(

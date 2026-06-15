@@ -13,7 +13,7 @@ if (project.file("google-services.json").exists()) {
 }
 
 android {
-    namespace = "com.example.northstar"
+    namespace = "com.example.opendash"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -21,11 +21,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.northstar.app"
+        applicationId = "com.opendash.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 11
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -33,7 +33,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".mui3"
-            resValue("string", "app_name", "Northstar M3")
+            resValue("string", "app_name", "OpenDash M3")
         }
         release {
             optimization {

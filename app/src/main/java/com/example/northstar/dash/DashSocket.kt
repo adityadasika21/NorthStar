@@ -1,7 +1,7 @@
-package com.example.northstar.dash
+package com.example.opendash.dash
 
 import android.util.Log
-import com.example.northstar.dash.protocol.K1GPacket
+import com.example.opendash.dash.protocol.K1GPacket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket

@@ -1,4 +1,4 @@
-package com.example.northstar.dash.map
+package com.example.opendash.dash.map
 
 import kotlin.math.PI
 import kotlin.math.atan

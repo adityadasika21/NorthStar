@@ -9,14 +9,14 @@ fresh packet captures and explicit review.
 
 Treat these files as protocol-critical:
 
-- `app/src/main/java/com/example/northstar/dash/DashSession.kt`
-- `app/src/main/java/com/example/northstar/dash/DashSocket.kt`
-- `app/src/main/java/com/example/northstar/dash/DashAuth.kt`
-- `app/src/main/java/com/example/northstar/dash/protocol/DashCommands.kt`
-- `app/src/main/java/com/example/northstar/dash/protocol/K1GPacket.kt`
-- `app/src/main/java/com/example/northstar/dash/video/RtpPacketizer.kt`
-- `app/src/main/java/com/example/northstar/dash/video/NalProcessor.kt`
-- `app/src/main/java/com/example/northstar/dash/video/DashEncoder.kt`
+- `app/src/main/java/com/example/opendash/dash/DashSession.kt`
+- `app/src/main/java/com/example/opendash/dash/DashSocket.kt`
+- `app/src/main/java/com/example/opendash/dash/DashAuth.kt`
+- `app/src/main/java/com/example/opendash/dash/protocol/DashCommands.kt`
+- `app/src/main/java/com/example/opendash/dash/protocol/K1GPacket.kt`
+- `app/src/main/java/com/example/opendash/dash/video/RtpPacketizer.kt`
+- `app/src/main/java/com/example/opendash/dash/video/NalProcessor.kt`
+- `app/src/main/java/com/example/opendash/dash/video/DashEncoder.kt`
 
 Read-only wiring from other modules is acceptable when needed, but protocol packet
 constants, packet ordering, socket targets, acknowledgement handling, and RTP

@@ -1,4 +1,4 @@
-package com.example.northstar.dash.video
+package com.example.opendash.dash.video
 
 /**
  * Splits Annex-B H.264 output from MediaCodec into individual NAL units,

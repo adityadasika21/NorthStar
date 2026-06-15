@@ -1,4 +1,4 @@
-package com.example.northstar.dash
+package com.example.opendash.dash
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -13,11 +13,11 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
-import com.example.northstar.MainActivity
-import com.example.northstar.R
+import com.example.opendash.MainActivity
+import com.example.opendash.R
 
 /**
- * Foreground service that keeps Northstar streaming to the dash while the
+ * Foreground service that keeps OpenDash streaming to the dash while the
  * phone screen is OFF — the whole reason this app exists.
  *
  * It does NOT own the streaming pipeline (that stays in DashViewModel, which
@@ -33,10 +33,10 @@ import com.example.northstar.R
 class DashKeepAliveService : Service() {
     companion object {
         private const val TAG          = "DashKeepAlive"
-        private const val CHANNEL_ID   = "northstar_dash"
+        private const val CHANNEL_ID   = "opendash_dash"
         private const val NOTIF_ID     = 4701
-        const val ACTION_START = "com.example.northstar.DASH_START"
-        const val ACTION_STOP  = "com.example.northstar.DASH_STOP"
+        const val ACTION_START = "com.example.opendash.DASH_START"
+        const val ACTION_STOP  = "com.example.opendash.DASH_STOP"
 
         fun start(context: Context) {
             val i = Intent(context, DashKeepAliveService::class.java).setAction(ACTION_START)
@@ -86,7 +86,7 @@ class DashKeepAliveService : Service() {
 
     private fun acquireLocks() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "northstar:dash").apply {
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "opendash:dash").apply {
             setReferenceCounted(false)
             acquire()
         }
@@ -97,7 +97,7 @@ class DashKeepAliveService : Service() {
         @Suppress("DEPRECATION")
         val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         @Suppress("DEPRECATION")
-        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "northstar:dash").apply {
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "opendash:dash").apply {
             setReferenceCounted(false)
             acquire()
         }
@@ -141,7 +141,7 @@ class DashKeepAliveService : Service() {
             @Suppress("DEPRECATION") Notification.Builder(this)
 
         return builder
-            .setContentTitle("Northstar — streaming to dash")
+            .setContentTitle("OpenDash — streaming to dash")
             .setContentText("Map is live on the Tripper. Screen can stay off.")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)

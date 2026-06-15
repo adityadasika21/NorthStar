@@ -1,7 +1,7 @@
-package com.example.northstar.dash
+package com.example.opendash.dash
 
-import com.example.northstar.dash.protocol.DashCommands
-import com.example.northstar.dash.protocol.Tlv
+import com.example.opendash.dash.protocol.DashCommands
+import com.example.opendash.dash.protocol.Tlv
 import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.SecureRandom

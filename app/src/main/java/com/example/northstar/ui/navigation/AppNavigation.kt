@@ -1,4 +1,4 @@
-package com.example.northstar.ui.navigation
+package com.example.opendash.ui.navigation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
@@ -21,15 +21,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.screens.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.viewmodel.AppViewModel
-import com.example.northstar.viewmodel.AuthViewModel
-import com.example.northstar.viewmodel.ConnStage
-import com.example.northstar.viewmodel.ConnectionState
-import com.example.northstar.viewmodel.DashViewModel
-import com.example.northstar.viewmodel.RouteViewModel
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.screens.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.viewmodel.AppViewModel
+import com.example.opendash.viewmodel.AuthViewModel
+import com.example.opendash.viewmodel.ConnStage
+import com.example.opendash.viewmodel.ConnectionState
+import com.example.opendash.viewmodel.DashViewModel
+import com.example.opendash.viewmodel.RouteViewModel
 
 sealed class Screen(val route: String) {
     object Login    : Screen("login")
@@ -44,11 +44,11 @@ sealed class Screen(val route: String) {
 private data class NavTab(val screen: Screen, val icon: ImageVector, val label: String)
 
 private val bottomTabs = listOf(
-    NavTab(Screen.Home,   NorthstarIcons.Home,    "Home"),
-    NavTab(Screen.Route,  NorthstarIcons.Navi,    "Route"),
-    NavTab(Screen.Dash,   NorthstarIcons.Dash,    "Dash"),
-    NavTab(Screen.Garage, NorthstarIcons.Wrench,  "Garage"),
-    NavTab(Screen.Rides,  NorthstarIcons.History, "Rides"),
+    NavTab(Screen.Home,   OpenDashIcons.Home,    "Home"),
+    NavTab(Screen.Route,  OpenDashIcons.Navi,    "Route"),
+    NavTab(Screen.Dash,   OpenDashIcons.Dash,    "Dash"),
+    NavTab(Screen.Garage, OpenDashIcons.Wrench,  "Garage"),
+    NavTab(Screen.Rides,  OpenDashIcons.History, "Rides"),
 )
 
 private val bottomRoutes = bottomTabs.map { it.screen.route }
@@ -209,7 +209,7 @@ fun AppNavigation(
         }
 
         if (showBottomNav) {
-            NorthstarBottomNav(
+            OpenDashBottomNav(
                 currentRoute = currentRoute,
                 onNavSelect = { screen ->
                     navController.navigate(screen.route) {
@@ -224,7 +224,7 @@ fun AppNavigation(
 }
 
 @Composable
-private fun NorthstarBottomNav(
+private fun OpenDashBottomNav(
     currentRoute: String?,
     onNavSelect: (Screen) -> Unit,
 ) {

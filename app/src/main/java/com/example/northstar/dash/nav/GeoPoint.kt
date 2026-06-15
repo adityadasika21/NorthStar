@@ -1,4 +1,4 @@
-package com.example.northstar.dash.nav
+package com.example.opendash.dash.nav
 
 import kotlin.math.atan2
 import kotlin.math.cos

@@ -1,4 +1,4 @@
-package com.example.northstar.viewmodel
+package com.example.opendash.viewmodel
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -7,27 +7,27 @@ import android.net.Uri
 import android.os.PowerManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.northstar.data.DashWallpaperKind
-import com.example.northstar.data.DashWallpaperInfo
-import com.example.northstar.data.DashWallpaperStore
-import com.example.northstar.dash.DashKeepAliveService
-import com.example.northstar.dash.DashSession
-import com.example.northstar.dash.DashState
-import com.example.northstar.dash.DashWifiManager
-import com.example.northstar.dash.WifiConnStatus
-import com.example.northstar.dash.map.LocationTracker
-import com.example.northstar.dash.map.MapRenderer
-import com.example.northstar.dash.map.Mercator
-import com.example.northstar.dash.map.TileProvider
-import com.example.northstar.dash.nav.GeoPoint
-import com.example.northstar.dash.nav.NavEngine
-import com.example.northstar.dash.nav.Route
-import com.example.northstar.dash.nav.Router
-import com.example.northstar.dash.protocol.DashCommands
-import com.example.northstar.dash.video.DashEncoder
-import com.example.northstar.dash.video.DashIdleRenderer
-import com.example.northstar.dash.video.NalProcessor
-import com.example.northstar.dash.video.RtpPacketizer
+import com.example.opendash.data.DashWallpaperKind
+import com.example.opendash.data.DashWallpaperInfo
+import com.example.opendash.data.DashWallpaperStore
+import com.example.opendash.dash.DashKeepAliveService
+import com.example.opendash.dash.DashSession
+import com.example.opendash.dash.DashState
+import com.example.opendash.dash.DashWifiManager
+import com.example.opendash.dash.WifiConnStatus
+import com.example.opendash.dash.map.LocationTracker
+import com.example.opendash.dash.map.MapRenderer
+import com.example.opendash.dash.map.Mercator
+import com.example.opendash.dash.map.TileProvider
+import com.example.opendash.dash.nav.GeoPoint
+import com.example.opendash.dash.nav.NavEngine
+import com.example.opendash.dash.nav.Route
+import com.example.opendash.dash.nav.Router
+import com.example.opendash.dash.protocol.DashCommands
+import com.example.opendash.dash.video.DashEncoder
+import com.example.opendash.dash.video.DashIdleRenderer
+import com.example.opendash.dash.video.NalProcessor
+import com.example.opendash.dash.video.RtpPacketizer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,10 +75,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     private val session     = DashSession(viewModelScope)
     private val wifiManager = DashWifiManager(app, viewModelScope)
-    private val dashConfig  = com.example.northstar.dash.DashConfig.get(app)
-    private val voice        = com.example.northstar.dash.nav.VoiceManager.get(app)
-    private val repo         = com.example.northstar.data.SyncRepository.get(app)
-    private val recorder     = com.example.northstar.data.RideRecorder()
+    private val dashConfig  = com.example.opendash.dash.DashConfig.get(app)
+    private val voice        = com.example.opendash.dash.nav.VoiceManager.get(app)
+    private val repo         = com.example.opendash.data.SyncRepository.get(app)
+    private val recorder     = com.example.opendash.data.RideRecorder()
     private val wallpaperStore = DashWallpaperStore(app)
     private val idleRenderer = DashIdleRenderer()
     private var recordJob: Job? = null
@@ -475,7 +475,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             offRoute = false,
             followMode = true,
         )
-        session.updateRouteCard("Northstar")   // dash card → name + 0.0 km, nav off
+        session.updateRouteCard("OpenDash")   // dash card → name + 0.0 km, nav off
     }
 
     /** Compute the road route now (while internet is reachable) and cache it. */
@@ -832,7 +832,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private data class NavState(
         val remainingM: Double, val nextTurnM: Double, val heading: Float, val offRoute: Boolean,
         val snapped: GeoPoint, val snapDist: Double,
-        val nextManeuver: com.example.northstar.dash.nav.Maneuver?,
+        val nextManeuver: com.example.opendash.dash.nav.Maneuver?,
     )
 
     private data class Match(val cum: Double, val dist: Double, val bearing: Float, val proj: GeoPoint)
@@ -866,7 +866,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         val remaining = (r.totalMeters - progressM).coerceAtLeast(0.0)
         val nextMan = r.maneuvers.firstOrNull {
-            it.cumulativeMeters > progressM + 1.0 && it.type != com.example.northstar.dash.nav.ManeuverType.DEPART
+            it.cumulativeMeters > progressM + 1.0 && it.type != com.example.opendash.dash.nav.ManeuverType.DEPART
         }
         val nextTurn = nextMan?.let { (it.cumulativeMeters - progressM).coerceAtLeast(0.0) } ?: remaining
         return NavState(remaining, nextTurn, m.bearing, m.dist > 70.0, m.proj, m.dist, nextMan)

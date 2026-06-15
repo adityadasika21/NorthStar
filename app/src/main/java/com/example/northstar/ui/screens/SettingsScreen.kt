@@ -1,4 +1,4 @@
-package com.example.northstar.ui.screens
+package com.example.opendash.ui.screens
 
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
@@ -41,14 +41,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import com.example.northstar.ui.NorthstarIcons
-import com.example.northstar.ui.components.*
-import com.example.northstar.ui.theme.*
-import com.example.northstar.data.DashWallpaperKind
-import com.example.northstar.data.DashWallpaperPaths
-import com.example.northstar.viewmodel.AuthViewModel
-import com.example.northstar.viewmodel.ConnectionState
-import com.example.northstar.viewmodel.DashViewModel
+import com.example.opendash.ui.OpenDashIcons
+import com.example.opendash.ui.components.*
+import com.example.opendash.ui.theme.*
+import com.example.opendash.data.DashWallpaperKind
+import com.example.opendash.data.DashWallpaperPaths
+import com.example.opendash.viewmodel.AuthViewModel
+import com.example.opendash.viewmodel.ConnectionState
+import com.example.opendash.viewmodel.DashViewModel
 
 @Composable
 fun SettingsScreen(
@@ -105,12 +105,12 @@ fun SettingsScreen(
     }
 
     // Real voice setting, shared with RouteScreen via the VoiceManager singleton.
-    val voiceManager = remember { com.example.northstar.dash.nav.VoiceManager.get(ctx) }
+    val voiceManager = remember { com.example.opendash.dash.nav.VoiceManager.get(ctx) }
     val voiceMode by voiceManager.mode.collectAsState()
     val voice = when (voiceMode) {
-        com.example.northstar.dash.nav.VoiceMode.OFF   -> "Off"
-        com.example.northstar.dash.nav.VoiceMode.CHIME -> "Chime"
-        com.example.northstar.dash.nav.VoiceMode.FULL  -> "Full TTS"
+        com.example.opendash.dash.nav.VoiceMode.OFF   -> "Off"
+        com.example.opendash.dash.nav.VoiceMode.CHIME -> "Chime"
+        com.example.opendash.dash.nav.VoiceMode.FULL  -> "Full TTS"
     }
 
     Column(
@@ -123,7 +123,7 @@ fun SettingsScreen(
         ScreenHeader(title = "Settings", onBack = onBack)
 
         // Account card
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp, onClick = {}) {
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp, onClick = {}) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -145,29 +145,29 @@ fun SettingsScreen(
         }
 
         SectionLabel("Connection")
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
-            SettingRow(NorthstarIcons.Bt, "Tripper Dash",
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+            SettingRow(OpenDashIcons.Bt, "Tripper Dash",
                 sub = when (conn) { ConnectionState.Connected -> "Connected"; ConnectionState.Searching -> "Connecting…"; ConnectionState.Offline -> "Not connected" },
-                control = { NorthstarChip(if (conn == ConnectionState.Connected) "Linked" else "Off", if (conn == ConnectionState.Connected) ChipTone.Gold else ChipTone.Off, dot = true) })
-            NorthstarDivider(Modifier.padding(horizontal = 6.dp))
-            SettingRow(NorthstarIcons.Sync, "Auto-connect on start", "Link when the bike is near",
-                control = { NorthstarToggle(autoConnect) { autoConnect = it } })
-            NorthstarDivider(Modifier.padding(horizontal = 6.dp))
-            SettingRow(NorthstarIcons.Zap, "Stream quality", "Balanced · saves battery",
-                control = { Icon(NorthstarIcons.ChevronRight, null, tint = TextLo, modifier = Modifier.size(18.dp)) }, last = true)
+                control = { OpenDashChip(if (conn == ConnectionState.Connected) "Linked" else "Off", if (conn == ConnectionState.Connected) ChipTone.Gold else ChipTone.Off, dot = true) })
+            OpenDashDivider(Modifier.padding(horizontal = 6.dp))
+            SettingRow(OpenDashIcons.Sync, "Auto-connect on start", "Link when the bike is near",
+                control = { OpenDashToggle(autoConnect) { autoConnect = it } })
+            OpenDashDivider(Modifier.padding(horizontal = 6.dp))
+            SettingRow(OpenDashIcons.Zap, "Stream quality", "Balanced · saves battery",
+                control = { Icon(OpenDashIcons.ChevronRight, null, tint = TextLo, modifier = Modifier.size(18.dp)) }, last = true)
         }
 
         SectionLabel("During a ride")
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
-            SettingRow(NorthstarIcons.Power, "Turn phone screen off", "Map keeps streaming to the dash",
-                control = { NorthstarToggle(screenOff) { screenOff = it } })
-            NorthstarDivider(Modifier.padding(horizontal = 6.dp))
-            SettingRow(NorthstarIcons.Dash, "Keep dash awake", "Prevent Tripper sleep",
-                control = { NorthstarToggle(keepAwake) { keepAwake = it } }, last = true)
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+            SettingRow(OpenDashIcons.Power, "Turn phone screen off", "Map keeps streaming to the dash",
+                control = { OpenDashToggle(screenOff) { screenOff = it } })
+            OpenDashDivider(Modifier.padding(horizontal = 6.dp))
+            SettingRow(OpenDashIcons.Dash, "Keep dash awake", "Prevent Tripper sleep",
+                control = { OpenDashToggle(keepAwake) { keepAwake = it } }, last = true)
         }
 
         SectionLabel("Dash Wallpaper")
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
@@ -176,7 +176,7 @@ fun SettingsScreen(
                     modifier = Modifier.size(44.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(NorthstarIcons.Moon, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Icon(OpenDashIcons.Moon, contentDescription = null, modifier = Modifier.size(22.dp))
                     }
                 }
                 Spacer(Modifier.width(14.dp))
@@ -248,73 +248,73 @@ fun SettingsScreen(
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (pendingWallpaperPreview != null && pendingWallpaperUri != null) {
-                    NorthstarBtn(
+                    OpenDashBtn(
                         "Save crop",
                         onClick = {
                             dashViewModel.setWallpaperFromUri(pendingWallpaperUri!!, cropX, cropY)
                             pendingWallpaperUri = null
                             pendingWallpaperPreview = null
                         },
-                        icon = NorthstarIcons.Check,
+                        icon = OpenDashIcons.Check,
                         variant = BtnVariant.Primary,
                         size = BtnSize.Sm,
                         modifier = Modifier.weight(1f),
                     )
-                    NorthstarBtn(
+                    OpenDashBtn(
                         "Cancel",
                         onClick = {
                             pendingWallpaperUri = null
                             pendingWallpaperPreview = null
                         },
-                        icon = NorthstarIcons.X,
+                        icon = OpenDashIcons.X,
                         variant = BtnVariant.Ghost,
                         size = BtnSize.Sm,
                         modifier = Modifier.weight(1f),
                     )
                 } else {
                     if (dashUi.wallpaperGalleryCount > 1) {
-                        NorthstarIconBtn(
-                            icon = NorthstarIcons.ChevronLeft,
+                        OpenDashIconBtn(
+                            icon = OpenDashIcons.ChevronLeft,
                             onClick = { dashViewModel.cycleWallpaperFromSettings(-1) },
                             size = 40.dp,
                         )
                     }
-                    NorthstarBtn(
+                    OpenDashBtn(
                         if (dashUi.wallpaperGalleryCount >= 5) "Replace current" else "Add media",
                         onClick = {
                             wallpaperPicker.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                             )
                         },
-                        icon = NorthstarIcons.Edit,
+                        icon = OpenDashIcons.Edit,
                         variant = BtnVariant.Primary,
                         size = BtnSize.Sm,
                         modifier = Modifier.weight(1f),
                     )
-                    NorthstarBtn(
+                    OpenDashBtn(
                         "Add many",
                         onClick = {
                             wallpaperMultiPicker.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                             )
                         },
-                        icon = NorthstarIcons.Edit,
+                        icon = OpenDashIcons.Edit,
                         variant = BtnVariant.Ghost,
                         size = BtnSize.Sm,
                         modifier = Modifier.weight(1f),
                     )
                     if (dashUi.wallpaperGalleryCount > 1) {
-                        NorthstarIconBtn(
-                            icon = NorthstarIcons.ChevronRight,
+                        OpenDashIconBtn(
+                            icon = OpenDashIcons.ChevronRight,
                             onClick = { dashViewModel.cycleWallpaperFromSettings(1) },
                             size = 40.dp,
                         )
                     }
                     if (dashUi.wallpaperPath != null) {
-                        NorthstarBtn(
+                        OpenDashBtn(
                             "Remove",
                             onClick = { dashViewModel.clearWallpaper() },
-                            icon = NorthstarIcons.X,
+                            icon = OpenDashIcons.X,
                             variant = BtnVariant.Ghost,
                             size = BtnSize.Sm,
                             modifier = Modifier.weight(1f),
@@ -325,31 +325,31 @@ fun SettingsScreen(
         }
 
         SectionLabel("Voice & guidance")
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
-            NorthstarSegmented(listOf("Off", "Chime", "Full TTS"), voice, {
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
+            OpenDashSegmented(listOf("Off", "Chime", "Full TTS"), voice, {
                 voiceManager.setMode(when (it) {
-                    "Off"      -> com.example.northstar.dash.nav.VoiceMode.OFF
-                    "Full TTS" -> com.example.northstar.dash.nav.VoiceMode.FULL
-                    else       -> com.example.northstar.dash.nav.VoiceMode.CHIME
+                    "Off"      -> com.example.opendash.dash.nav.VoiceMode.OFF
+                    "Full TTS" -> com.example.opendash.dash.nav.VoiceMode.FULL
+                    else       -> com.example.opendash.dash.nav.VoiceMode.CHIME
                 })
             }, Modifier.fillMaxWidth())
         }
 
         SectionLabel("Units")
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
-            NorthstarSegmented(listOf("Kilometres", "Miles"), units, { units = it }, Modifier.fillMaxWidth())
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
+            OpenDashSegmented(listOf("Kilometres", "Miles"), units, { units = it }, Modifier.fillMaxWidth())
         }
 
         SectionLabel("Sync")
-        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+        OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
             val (syncTitle, syncSub) = when {
                 !auth.syncAvailable -> "Local only" to "Add your own Firebase project to sync across devices"
                 auth.isSignedIn     -> "Synced" to (auth.email ?: "Signed in")
                 else                -> "Not signed in" to "Sign in to sync across devices · data stays local until then"
             }
-            SettingRow(NorthstarIcons.Sync, syncTitle, syncSub,
+            SettingRow(OpenDashIcons.Sync, syncTitle, syncSub,
                 control = {
-                    NorthstarChip(
+                    OpenDashChip(
                         if (auth.isSignedIn) "On" else "Off",
                         if (auth.isSignedIn) ChipTone.Gold else ChipTone.Off, dot = true,
                     )
@@ -359,10 +359,10 @@ fun SettingsScreen(
         Spacer(Modifier.height(22.dp))
 
         if (auth.isSignedIn) {
-            NorthstarBtn(
+            OpenDashBtn(
                 "Sign out",
                 onClick = { authViewModel.signOut(); onSignedOut() },
-                icon = NorthstarIcons.Power,
+                icon = OpenDashIcons.Power,
                 variant = BtnVariant.Danger,
                 size = BtnSize.Md,
                 modifier = Modifier.fillMaxWidth(),
@@ -371,7 +371,7 @@ fun SettingsScreen(
         }
 
         Text(
-            "NORTHSTAR v1.0 · ${if (!auth.syncAvailable) "local only" else if (auth.isSignedIn) "sync on" else "sync off"}",
+            "OpenDash v1.1 · ${if (!auth.syncAvailable) "local only" else if (auth.isSignedIn) "sync on" else "sync off"}",
             color = TextDis, fontSize = 11.sp, fontFamily = GeistMonoFamily,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp),
         )

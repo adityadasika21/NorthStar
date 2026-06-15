@@ -1,8 +1,8 @@
-package com.example.northstar.dash
+package com.example.opendash.dash
 
 import android.util.Log
-import com.example.northstar.dash.protocol.DashCommands
-import com.example.northstar.dash.protocol.K1GPacket
+import com.example.opendash.dash.protocol.DashCommands
+import com.example.opendash.dash.protocol.K1GPacket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +26,7 @@ class DashSession(private val scope: CoroutineScope) {
         private const val BURST_PAUSE   = 20L
         private const val PROJ_HB_MS     = 250L   // 4 Hz
         private const val ROUTE_CARD_MS  = 1_000L // 1 Hz keep-alive
-        private const val HOSTNAME       = "Northstar"
+        private const val HOSTNAME       = "OpenDash"
     }
 
     private val _state = MutableStateFlow(DashState.IDLE)
@@ -40,7 +40,7 @@ class DashSession(private val scope: CoroutineScope) {
     var onButton: ((Byte) -> Unit)? = null
     var onError:  ((String) -> Unit)? = null
 
-    @Volatile var destinationName: String = "Northstar"
+    @Volatile var destinationName: String = "OpenDash"
 
     private var sessionJob: Job? = null
     private var rxJob: Job? = null
@@ -112,9 +112,9 @@ class DashSession(private val scope: CoroutineScope) {
     fun sendRtp(packet: ByteArray) { socket?.sendRtp(packet) }
 
     fun updateRouteCard(name: String) {
-        destinationName = name.ifBlank { "Northstar" }
+        destinationName = name.ifBlank { "OpenDash" }
         navActive = false   // new destination — old figures are stale until the next updateNavInfo
-        navChromeEnabled = destinationName != "Northstar"
+        navChromeEnabled = destinationName != "OpenDash"
         if (navChromeEnabled && (_state.value == DashState.READY || _state.value == DashState.STREAMING)) {
             scope.launch(Dispatchers.IO) {
                 socket?.send(liveRouteCard(projectionOn = true))

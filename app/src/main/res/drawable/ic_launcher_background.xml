@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Solid near-black to match the Northstar icon's #080809 corners, so the adaptive
+<!-- Solid near-black to match the OpenDash icon's #080809 corners, so the adaptive
      foreground square blends seamlessly into the masked icon shape. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

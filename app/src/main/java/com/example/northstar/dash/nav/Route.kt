@@ -1,4 +1,4 @@
-package com.example.northstar.dash.nav
+package com.example.opendash.dash.nav
 
 /** Maneuver glyphs the dash understands. Only CONTINUE (0x0B) is hardware-verified;
  *  the rest are best-effort guesses and must be checked on fw 11.63. Until then

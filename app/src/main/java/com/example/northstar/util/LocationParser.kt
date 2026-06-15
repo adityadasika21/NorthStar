@@ -1,7 +1,7 @@
-package com.example.northstar.util
+package com.example.opendash.util
 
 import android.util.Log
-import com.example.northstar.data.SharedLocation
+import com.example.opendash.data.SharedLocation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection

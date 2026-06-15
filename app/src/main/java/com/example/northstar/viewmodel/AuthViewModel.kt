@@ -1,4 +1,4 @@
-package com.example.northstar.viewmodel
+package com.example.opendash.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

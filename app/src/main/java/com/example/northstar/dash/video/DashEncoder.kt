@@ -1,4 +1,4 @@
-package com.example.northstar.dash.video
+package com.example.opendash.dash.video
 
 import android.graphics.Canvas
 import android.media.MediaCodec

@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Northstar"
+rootProject.name = "OpenDash"
 include(":app")

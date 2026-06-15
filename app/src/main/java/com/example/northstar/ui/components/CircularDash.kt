@@ -1,4 +1,4 @@
-package com.example.northstar.ui.components
+package com.example.opendash.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.northstar.ui.theme.*
+import com.example.opendash.ui.theme.*
 import kotlin.math.*
 
 /**

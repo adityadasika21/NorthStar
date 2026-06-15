@@ -1,4 +1,4 @@
-package com.example.northstar
+package com.example.opendash
 
 import android.content.Intent
 import android.os.Bundle
@@ -9,11 +9,11 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.example.northstar.data.SyncRepository
-import com.example.northstar.ui.navigation.AppNavigation
-import com.example.northstar.ui.theme.Bg1
-import com.example.northstar.ui.theme.NorthstarTheme
-import com.example.northstar.viewmodel.RouteViewModel
+import com.example.opendash.data.SyncRepository
+import com.example.opendash.ui.navigation.AppNavigation
+import com.example.opendash.ui.theme.Bg1
+import com.example.opendash.ui.theme.OpenDashTheme
+import com.example.opendash.viewmodel.RouteViewModel
 import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         // stop on sign-out. Only wired when Firebase is configured (bring-your-own-project);
         // otherwise the app runs fully local with no sync.
         val sync = SyncRepository.get(applicationContext)
-        if (com.example.northstar.data.FirebaseGate.isConfigured(applicationContext)) {
+        if (com.example.opendash.data.FirebaseGate.isConfigured(applicationContext)) {
             authListener = FirebaseAuth.AuthStateListener { fa ->
                 if (fa.currentUser != null) sync.startSync() else sync.stopSync()
             }.also { FirebaseAuth.getInstance().addAuthStateListener(it) }
@@ -36,14 +36,14 @@ class MainActivity : ComponentActivity() {
 
         // Maintenance reminders on app open (fires even if the Garage screen is never opened).
         Thread {
-            com.example.northstar.data.MaintenanceNotifier.check(
+            com.example.opendash.data.MaintenanceNotifier.check(
                 applicationContext, sync.maintenanceItems(), sync.odometer()
             )
         }.start()
 
         handleIntent(intent)
         setContent {
-            NorthstarTheme {
+            OpenDashTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Bg1) {
                     AppNavigation(routeViewModel = routeViewModel)
                 }

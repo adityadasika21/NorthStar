@@ -1,10 +1,10 @@
-package com.example.northstar.ui.theme
+package com.example.opendash.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
-private val NorthstarColorScheme = darkColorScheme(
+private val OpenDashColorScheme = darkColorScheme(
     primary            = Gold,
     onPrimary          = OnGold,
     primaryContainer   = GoldTint,
@@ -38,9 +38,9 @@ private val NorthstarColorScheme = darkColorScheme(
 )
 
 @Composable
-fun NorthstarTheme(content: @Composable () -> Unit) {
+fun OpenDashTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = NorthstarColorScheme,
+        colorScheme = OpenDashColorScheme,
         typography = Typography,
         content = content,
     )

@@ -1,4 +1,4 @@
-package com.example.northstar.ui
+package com.example.opendash.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -49,7 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
 
-object NorthstarIcons {
+object OpenDashIcons {
     // ---- Material icon aliases ----
     val Home          = Icons.Outlined.Home
     val Route         = Icons.Outlined.Route

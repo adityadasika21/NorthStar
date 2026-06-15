@@ -1,4 +1,4 @@
-package com.example.northstar.data
+package com.example.opendash.data
 
 import android.content.Context
 import com.google.firebase.FirebaseApp

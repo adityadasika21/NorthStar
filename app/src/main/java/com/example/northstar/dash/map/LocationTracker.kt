@@ -7,6 +7,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
 import android.util.Log
+import com.example.northstar.util.Dbg
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -27,7 +28,7 @@ class LocationTracker(context: Context) {
         val cur = _location.value
         if (acceptFix(cur, loc)) {
             _location.value = loc
-            Log.d(TAG, "fix ${loc.provider} acc=${loc.accuracy} (${loc.latitude},${loc.longitude})")
+            Dbg.d(TAG) { "fix ${loc.provider} acc=${loc.accuracy} (${loc.latitude},${loc.longitude})" }
         } else {
             Log.d(TAG, "REJECT ${loc.provider} acc=${loc.accuracy} dt=${loc.time - (cur?.time ?: 0)}ms")
         }

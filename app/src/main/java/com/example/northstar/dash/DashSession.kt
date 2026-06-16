@@ -2,6 +2,7 @@ package com.example.northstar.dash
 
 import android.util.Log
 import com.example.northstar.dash.protocol.DashCommands
+import com.example.northstar.util.Dbg
 import com.example.northstar.dash.protocol.K1GPacket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -231,7 +232,7 @@ class DashSession(private val scope: CoroutineScope) {
             it.type == 0x09 && (it.sub == 0x06 || it.sub == 0x04) &&
                 it.value.firstOrNull()?.toInt() == 0x55
         }
-        if (!onlyAcks) Log.i(TAG, "RX RAW (${pkt.size}B): ${pkt.toHexFull()}")
+        if (!onlyAcks) Dbg.i(TAG) { "RX RAW (${pkt.size}B): ${pkt.toHexFull()}" }
         for (tlv in tlvs) {
             // ── Auth (07 xx) ──
             if (tlv.type == 0x07) {

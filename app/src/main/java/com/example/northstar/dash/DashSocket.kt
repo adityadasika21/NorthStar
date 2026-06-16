@@ -2,6 +2,7 @@ package com.example.northstar.dash
 
 import android.util.Log
 import com.example.northstar.dash.protocol.K1GPacket
+import com.example.northstar.util.Dbg
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
@@ -73,7 +74,7 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
     /** Send a K1G control packet (seq patched here, like K1GTx in the reference). */
     fun send(data: ByteArray) {
         val pkt = K1GPacket.patchSeq(data, seq.getAndIncrement())
-        Log.d(TAG, "TX →$BROADCAST:$CTRL_PORT  ${pkt.size}B  ${pkt.hex()}")
+        Dbg.d(TAG) { "TX →$BROADCAST:$CTRL_PORT  ${pkt.size}B  ${pkt.hex()}" }
         // UDP fire-and-forget: a dropped/unreachable link (ENETUNREACH, EBADF) must never
         // crash the app — the session will fail and reconnect.
         try {
@@ -101,7 +102,7 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
         return@withContext try {
             rxSocket.receive(buf)
             val bytes = buf.data.copyOf(buf.length)
-            Log.d(TAG, "RX ←${buf.address?.hostAddress}:${buf.port}  ${bytes.size}B  ${bytes.hex()}")
+            Dbg.d(TAG) { "RX ←${buf.address?.hostAddress}:${buf.port}  ${bytes.size}B  ${bytes.hex()}" }
             bytes
         } catch (_: java.net.SocketTimeoutException) {
             null

@@ -73,6 +73,10 @@ android {
     }
     buildFeatures {
         compose = true
+        // Generates BuildConfig.DEBUG — used to gate sensitive logging (GPS coordinates,
+        // shared-location text/URLs, the signed-in uid, raw dash packets) out of release
+        // builds. See util/Dbg.kt.
+        buildConfig = true
     }
 }
 

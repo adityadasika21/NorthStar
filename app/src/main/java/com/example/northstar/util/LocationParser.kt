@@ -35,7 +35,7 @@ object LocationParser {
     /** Synchronous parse of the raw shared text/URI (no network). */
     fun parse(text: String): SharedLocation {
         val trimmed = text.trim()
-        Log.d(TAG, "parse(): $trimmed")
+        Dbg.d(TAG) { "parse(): $trimmed" }
         // Strip trailing sentence punctuation that often clings to a shared link
         // ("...goo.gl/abc." / "(...)") so the redirect/resolve doesn't 404.
         val url = urlRegex.find(trimmed)?.value?.trimEnd('.', ',', ';', '!', '?', ')', ']', '"', '\'')
@@ -58,7 +58,7 @@ object LocationParser {
             else -> "Loading…"
         }
 
-        Log.d(TAG, "parse() → name='$name' coords=$coords short=$isShort url=$url")
+        Dbg.d(TAG) { "parse() → name='$name' coords=$coords short=$isShort url=$url" }
         return SharedLocation(
             name = name,
             lat = coords?.first,
@@ -78,7 +78,7 @@ object LocationParser {
         var coords = extractCoords(finalUrl)
         val name = extractPlaceName(finalUrl)
         if (coords == null) coords = scanBody(body)
-        Log.i(TAG, "resolve() → coords=$coords name=$name finalUrl=${finalUrl.take(120)}")
+        Dbg.i(TAG) { "resolve() → coords=$coords name=$name finalUrl=${finalUrl.take(120)}" }
         coords to name
     }
 
@@ -126,7 +126,7 @@ object LocationParser {
             val m = p.find(body) ?: continue
             val lat = m.groupValues[1].toDoubleOrNull() ?: continue
             val lng = m.groupValues[2].toDoubleOrNull() ?: continue
-            if (valid(lat, lng)) { Log.d(TAG, "scanBody matched ${p.pattern.take(24)} → $lat,$lng"); return lat to lng }
+            if (valid(lat, lng)) { Dbg.d(TAG) { "scanBody matched ${p.pattern.take(24)} → $lat,$lng" }; return lat to lng }
         }
         return null
     }
@@ -141,7 +141,7 @@ object LocationParser {
                 if (url.contains("consent.google") || url.contains("/sorry/")) {
                     Regex("continue=([^&]+)").find(url)?.groupValues?.get(1)?.let {
                         url = URLDecoder.decode(it, "UTF-8")
-                        Log.d(TAG, "consent bypass → ${url.take(100)}")
+                        Dbg.d(TAG) { "consent bypass → ${url.take(100)}" }
                     }
                 }
                 // Refuse to fetch anything outside the Maps/short-link allowlist — covers the
@@ -160,7 +160,7 @@ object LocationParser {
                 }
                 val code = conn.responseCode
                 val loc = conn.getHeaderField("Location")
-                Log.d(TAG, "hop $hop: $code ${loc?.take(90) ?: ""}")
+                Dbg.d(TAG) { "hop $hop: $code ${loc?.take(90) ?: ""}" }
                 if (code in 300..399 && !loc.isNullOrBlank()) {
                     conn.disconnect()
                     url = if (loc.startsWith("http")) loc else URL(URL(url), loc).toString()

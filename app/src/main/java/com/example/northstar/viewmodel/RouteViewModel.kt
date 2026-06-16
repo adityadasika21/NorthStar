@@ -12,6 +12,7 @@ import com.example.northstar.data.SharedLocation
 import com.example.northstar.dash.nav.GeoPoint
 import com.example.northstar.dash.nav.Route
 import com.example.northstar.dash.nav.Router
+import com.example.northstar.util.Dbg
 import com.example.northstar.util.LocationParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,7 +125,7 @@ class RouteViewModel(app: Application) : AndroidViewModel(app) {
                 Log.w(TAG, "Geocoder: no result for '$query'")
                 return@withContext null
             }
-            Log.i(TAG, "Geocoded '$query' → ${a.latitude},${a.longitude}")
+            Dbg.i(TAG) { "Geocoded '$query' → ${a.latitude},${a.longitude}" }
             a.latitude to a.longitude
         } catch (e: Exception) {
             Log.w(TAG, "Geocoder failed: ${e.message}")

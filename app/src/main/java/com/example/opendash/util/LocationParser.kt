@@ -5,13 +5,23 @@ import com.example.opendash.data.SharedLocation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.net.URLDecoder
 
 object LocationParser {
     private const val TAG = "LocationParser"
+    private const val MAX_BODY_BYTES = 256 * 1024
     private const val UA = "Mozilla/5.0 (Linux; Android 14; Nothing Phone 3) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+    private val allowedMapHosts = setOf(
+        "maps.google.com",
+        "www.google.com",
+        "google.com",
+        "maps.app.goo.gl",
+        "goo.gl",
+        "g.co",
+    )
 
     private val urlRegex  = Regex("https?://[^\\s)]+")
     private val coord3d4d = Regex("!3d(-?\\d+\\.\\d+)!4d(-?\\d+\\.\\d+)")
@@ -35,11 +45,13 @@ object LocationParser {
     /** Synchronous parse of the raw shared text/URI (no network). */
     fun parse(text: String): SharedLocation {
         val trimmed = text.trim()
-        Log.d(TAG, "parse(): $trimmed")
+        safeLog { "parse(): input received" }
         // Strip trailing sentence punctuation that often clings to a shared link
         // ("...goo.gl/abc." / "(...)") so the redirect/resolve doesn't 404.
-        val url = urlRegex.find(trimmed)?.value?.trimEnd('.', ',', ';', '!', '?', ')', ']', '"', '\'')
+        val candidateUrl = urlRegex.find(trimmed)?.value?.trimEnd('.', ',', ';', '!', '?', ')', ']', '"', '\'')
             ?: if (trimmed.startsWith("geo:")) trimmed else null
+        val url = candidateUrl?.takeIf { isAllowedShareUri(it) }
+        val rejectedUrl = candidateUrl != null && url == null
 
         val isShort = url != null && (
             url.contains("maps.app.goo.gl") || url.contains("goo.gl/maps") ||
@@ -49,7 +61,11 @@ object LocationParser {
         val textName = textBefore?.lines()?.lastOrNull { it.isNotBlank() }
             ?.removeSuffix(":")?.removePrefix("Check out")?.trim()
 
-        val coords = if (url != null && !isShort) extractCoords(url) else extractCoords(trimmed)
+        val coords = when {
+            url != null && !isShort -> extractCoords(url)
+            rejectedUrl -> null
+            else -> extractCoords(trimmed)
+        }
 
         val name = when {
             !textName.isNullOrBlank() && textName != "Check out" -> textName
@@ -58,7 +74,7 @@ object LocationParser {
             else -> "Loading…"
         }
 
-        Log.d(TAG, "parse() → name='$name' coords=$coords short=$isShort url=$url")
+        safeLog { "parse() -> name='$name' hasCoords=${coords != null} short=$isShort acceptedUrl=${url != null}" }
         return SharedLocation(
             name = name,
             lat = coords?.first,
@@ -74,11 +90,15 @@ object LocationParser {
      * coordinates Google embeds there. Run off the main thread.
      */
     suspend fun resolve(url: String): Pair<Pair<Double, Double>?, String?> = withContext(Dispatchers.IO) {
+        if (!isAllowedNetworkUrl(url)) {
+            safeLog { "resolve(): rejected URL" }
+            return@withContext null to null
+        }
         val (finalUrl, body) = fetchFollowing(url)
         var coords = extractCoords(finalUrl)
         val name = extractPlaceName(finalUrl)
         if (coords == null) coords = scanBody(body)
-        Log.i(TAG, "resolve() → coords=$coords name=$name finalUrl=${finalUrl.take(120)}")
+        safeLog { "resolve() -> hasCoords=${coords != null} hasName=${!name.isNullOrBlank()} finalHost=${hostOf(finalUrl) ?: "unknown"}" }
         coords to name
     }
 
@@ -115,7 +135,10 @@ object LocationParser {
             val m = p.find(body) ?: continue
             val lat = m.groupValues[1].toDoubleOrNull() ?: continue
             val lng = m.groupValues[2].toDoubleOrNull() ?: continue
-            if (valid(lat, lng)) { Log.d(TAG, "scanBody matched ${p.pattern.take(24)} → $lat,$lng"); return lat to lng }
+            if (valid(lat, lng)) {
+                safeLog { "scanBody matched ${p.pattern.take(24)}" }
+                return lat to lng
+            }
         }
         return null
     }
@@ -130,9 +153,11 @@ object LocationParser {
                 if (url.contains("consent.google") || url.contains("/sorry/")) {
                     Regex("continue=([^&]+)").find(url)?.groupValues?.get(1)?.let {
                         url = URLDecoder.decode(it, "UTF-8")
-                        Log.d(TAG, "consent bypass → ${url.take(100)}")
+                        if (!isAllowedNetworkUrl(url)) return url to body
+                        safeLog { "consent bypass -> host=${hostOf(url) ?: "unknown"}" }
                     }
                 }
+                if (!isAllowedNetworkUrl(url)) return url to body
                 val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
                     requestMethod = "GET"
@@ -143,20 +168,60 @@ object LocationParser {
                 }
                 val code = conn.responseCode
                 val loc = conn.getHeaderField("Location")
-                Log.d(TAG, "hop $hop: $code ${loc?.take(90) ?: ""}")
+                safeLog { "hop $hop: $code locationHost=${loc?.let { resolvedRedirectUrl(url, it) }?.let { hostOf(it) } ?: ""}" }
                 if (code in 300..399 && !loc.isNullOrBlank()) {
                     conn.disconnect()
-                    url = if (loc.startsWith("http")) loc else URL(URL(url), loc).toString()
+                    url = resolvedRedirectUrl(url, loc)
+                    if (!isAllowedNetworkUrl(url)) return url to ""
                     if (extractCoords(url) != null) return url to ""
                 } else {
-                    body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                    body = conn.inputStream.use { stream ->
+                        stream.readLimitedBytes(MAX_BODY_BYTES).toString(Charsets.UTF_8)
+                    }
                     conn.disconnect()
                     return url to body
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "fetchFollowing failed: ${e.message}")
+            safeWarn("fetchFollowing failed: ${e.javaClass.simpleName}")
         }
         return url to body
+    }
+
+    private fun isAllowedShareUri(value: String): Boolean =
+        value.startsWith("geo:") || isAllowedNetworkUrl(value)
+
+    private fun isAllowedNetworkUrl(value: String): Boolean {
+        val uri = runCatching { URI(value) }.getOrNull() ?: return false
+        if (!uri.scheme.equals("https", ignoreCase = true)) return false
+        val host = uri.host?.lowercase() ?: return false
+        return host in allowedMapHosts
+    }
+
+    private fun resolvedRedirectUrl(base: String, location: String): String =
+        if (location.startsWith("http", ignoreCase = true)) location else URL(URL(base), location).toString()
+
+    private fun hostOf(value: String): String? =
+        runCatching { URI(value).host?.lowercase() }.getOrNull()
+
+    private fun java.io.InputStream.readLimitedBytes(maxBytes: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var remaining = maxBytes
+        while (remaining > 0) {
+            val read = read(buffer, 0, minOf(buffer.size, remaining))
+            if (read == -1) break
+            out.write(buffer, 0, read)
+            remaining -= read
+        }
+        return out.toByteArray()
+    }
+
+    private inline fun safeLog(message: () -> String) {
+        runCatching { Log.d(TAG, message()) }
+    }
+
+    private fun safeWarn(message: String) {
+        runCatching { Log.w(TAG, message) }
     }
 }

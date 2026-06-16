@@ -109,6 +109,17 @@ object LocationParser {
     private fun valid(lat: Double, lng: Double) =
         lat in -90.0..90.0 && lng in -180.0..180.0 && !(lat == 0.0 && lng == 0.0)
 
+    // Only ever fetch Google Maps / short-link hosts. A shared "location" is attacker-
+    // controlled text, and fetchFollowing() chases redirects + a consent `continue=` param —
+    // without this gate the app would issue GETs to any host the link points at (SSRF: leaking
+    // the device's network position, probing LAN hosts, acting as an open redirector).
+    private val allowedHostSuffixes = listOf("google.com", "goo.gl", "g.co", "ggpht.com")
+
+    private fun isAllowedHost(url: String): Boolean = runCatching {
+        val host = URL(url).host?.lowercase() ?: return false
+        allowedHostSuffixes.any { host == it || host.endsWith(".$it") }
+    }.getOrDefault(false)
+
     private fun scanBody(body: String): Pair<Double, Double>? {
         if (body.isBlank()) return null
         for (p in bodyPatterns) {
@@ -132,6 +143,12 @@ object LocationParser {
                         url = URLDecoder.decode(it, "UTF-8")
                         Log.d(TAG, "consent bypass → ${url.take(100)}")
                     }
+                }
+                // Refuse to fetch anything outside the Maps/short-link allowlist — covers the
+                // initial URL, every redirect target, and the consent-rewritten URL above.
+                if (!isAllowedHost(url)) {
+                    Log.w(TAG, "blocked non-allowlisted host: ${url.take(80)}")
+                    return url to body
                 }
                 val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false

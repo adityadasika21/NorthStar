@@ -27,9 +27,13 @@
          per-app "install unknown apps" grant). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Backups disabled: app-private storage holds identity documents (insurance/RC with
+         their numbers) and service invoices. allowBackup=true would funnel those into
+         Google cloud auto-backup and adb backup. Cross-device continuity for the syncable
+         data is already handled by Firestore (see data/SyncRepository.kt). -->
     <application
         android:name=".NorthstarApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

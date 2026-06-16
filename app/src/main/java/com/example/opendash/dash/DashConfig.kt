@@ -1,6 +1,13 @@
 package com.example.opendash.dash
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.widget.Toast
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 /**
  * Per-rider dash WiFi configuration, persisted on-device.
@@ -15,7 +22,9 @@ import android.content.Context
  */
 class DashConfig private constructor(context: Context) {
 
-    private val prefs = context.applicationContext.getSharedPreferences("dash_config", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val legacyPrefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = encryptedPrefsOrFallback()
 
     /** Broadest match across Tripper variants; rider-overridable. */
     var ssidPrefix: String
@@ -37,7 +46,51 @@ class DashConfig private constructor(context: Context) {
     /** Forget the learned dash so the next connect re-runs prefix discovery. */
     fun forgetDash() { ssid = "" }
 
+    private fun encryptedPrefsOrFallback(): SharedPreferences {
+        return runCatching {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            ).also { migrateLegacyValues(it) }
+        }.getOrElse { error ->
+            Log.w(TAG, "Encrypted dash_config unavailable; using fallback prefs (${error.javaClass.simpleName})")
+            showEncryptionWarning()
+            legacyPrefs
+        }
+    }
+
+    private fun migrateLegacyValues(encryptedPrefs: SharedPreferences) {
+        val legacyValues = listOf(KEY_PREFIX, KEY_SSID, KEY_PASSWORD)
+            .mapNotNull { key -> legacyPrefs.getString(key, null)?.let { key to it } }
+        if (legacyValues.isEmpty()) return
+
+        encryptedPrefs.edit().apply {
+            legacyValues.forEach { (key, value) -> putString(key, value) }
+        }.apply()
+        legacyPrefs.edit().apply {
+            legacyValues.forEach { (key, _) -> remove(key) }
+        }.apply()
+    }
+
+    private fun showEncryptionWarning() {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(
+                appContext,
+                "Dash WiFi settings are using fallback storage.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
     companion object {
+        private const val TAG = "DashConfig"
+        private const val PREFS_NAME = "dash_config"
         private const val KEY_PREFIX   = "ssid_prefix"
         private const val KEY_SSID     = "ssid"
         private const val KEY_PASSWORD = "password"

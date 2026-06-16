@@ -98,6 +98,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
+    implementation(libs.androidx.security.crypto)
     implementation(libs.google.identity.googleid)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.maplibre)

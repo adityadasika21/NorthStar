@@ -142,6 +142,52 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
 
         // Single connection card (hidden once streaming)
         if (!streaming) {
+            ui.pendingPairingSsid?.let { pendingSsid ->
+                OpenDashCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                "Pair with this dash?",
+                                color = TextHi,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                pendingSsid,
+                                color = Gold,
+                                fontSize = 12.sp,
+                                fontFamily = GeistMonoFamily,
+                                modifier = Modifier.padding(top = 3.dp),
+                            )
+                            Text(
+                                "OpenDash will remember this exact SSID for future reconnects.",
+                                color = TextMid,
+                                fontSize = 11.5.sp,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OpenDashBtn(
+                                "Cancel",
+                                onClick = { vm.rejectDiscoveredDash() },
+                                variant = BtnVariant.Ghost,
+                                size = BtnSize.Sm,
+                            )
+                            OpenDashBtn(
+                                "Pair",
+                                onClick = { vm.confirmDiscoveredDash() },
+                                icon = OpenDashIcons.Check,
+                                variant = BtnVariant.Primary,
+                                size = BtnSize.Sm,
+                            )
+                        }
+                    }
+                }
+            }
             OpenDashCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

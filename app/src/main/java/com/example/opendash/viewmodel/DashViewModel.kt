@@ -69,6 +69,7 @@ data class DashUiState(
     val wallpaperGalleryIndex: Int = 0,
     val wallpaperSaving: Boolean = false,
     val wallpaperError: String? = null,
+    val pendingPairingSsid: String? = null,
 )
 
 class DashViewModel(app: Application) : AndroidViewModel(app) {
@@ -180,11 +181,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         )
         publishWallpaper(wallpaperStore.currentInfo())
 
-        // When we connect to a previously-unknown dash by prefix, learn + persist its exact
-        // SSID so subsequent connects target it directly (no system picker again).
+        // When we connect to a previously-unknown dash by prefix, Android can reveal the
+        // exact SSID. Do not persist it until the rider confirms the pairing.
         wifiManager.onSsidResolved = { learned ->
-            dashConfig.ssid = learned
-            _ui.value = _ui.value.copy(ssid = learned)
+            requestPairingConfirmation(learned)
         }
 
         viewModelScope.launch {
@@ -198,7 +198,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                             delay(1_200)
                             // Re-check: the user may have hit Disconnect during the delay.
                             if (userWantsConnection &&
-                                wifiManager.state.value.status == WifiConnStatus.CONNECTED
+                                wifiManager.state.value.status == WifiConnStatus.CONNECTED &&
+                                _ui.value.pendingPairingSsid == null
                             ) session.connect(_ui.value.ssid, wifiManager.network)
                         }
                     }
@@ -281,8 +282,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // we've already joined. So if we don't have it stored, find it from a WiFi scan.
         if (dashConfig.needsDiscovery) {
             wifiManager.findDashSsid(dashConfig.ssidPrefix)?.let { found ->
-                dashConfig.ssid = found
-                _ui.value = _ui.value.copy(ssid = found)
+                requestPairingConfirmation(found)
+                return
             }
         }
 
@@ -332,7 +333,47 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     fun setSsid(s: String) { dashConfig.ssid = s.trim(); _ui.value = _ui.value.copy(ssid = s.trim()) }
     fun setWifiPassword(p: String) { dashConfig.password = p; _ui.value = _ui.value.copy(wifiPassword = p) }
     /** Forget the paired dash so the next connect rediscovers any RE_* dash by prefix. */
-    fun forgetDash() { dashConfig.forgetDash(); _ui.value = _ui.value.copy(ssid = "") }
+    fun forgetDash() {
+        dashConfig.forgetDash()
+        _ui.value = _ui.value.copy(ssid = "", pendingPairingSsid = null)
+    }
+
+    fun confirmDiscoveredDash() {
+        val ssid = _ui.value.pendingPairingSsid?.trim().orEmpty()
+        if (ssid.isBlank()) return
+        dashConfig.ssid = ssid
+        _ui.value = _ui.value.copy(ssid = ssid, pendingPairingSsid = null, errorMessage = null)
+        if (!userWantsConnection) return
+        when (wifiManager.state.value.status) {
+            WifiConnStatus.CONNECTED -> session.connect(ssid, wifiManager.network)
+            else -> wifiManager.connect(ssid, dashConfig.password)
+        }
+    }
+
+    fun rejectDiscoveredDash() {
+        _ui.value = _ui.value.copy(
+            pendingPairingSsid = null,
+            ssid = dashConfig.ssid,
+            errorMessage = "Dash pairing cancelled",
+        )
+        if (dashConfig.needsDiscovery) {
+            disconnect()
+        }
+    }
+
+    private fun requestPairingConfirmation(learnedSsid: String) {
+        val ssid = learnedSsid.trim()
+        if (ssid.isBlank()) return
+        if (dashConfig.ssid == ssid) {
+            _ui.value = _ui.value.copy(ssid = ssid, pendingPairingSsid = null)
+            return
+        }
+        _ui.value = _ui.value.copy(
+            ssid = ssid,
+            pendingPairingSsid = ssid,
+            errorMessage = null,
+        )
+    }
 
     fun setWallpaperFromUri(
         uri: Uri,

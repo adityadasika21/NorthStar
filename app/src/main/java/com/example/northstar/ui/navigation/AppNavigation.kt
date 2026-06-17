@@ -82,11 +82,21 @@ fun AppNavigation(
 
     // Single source of truth for connection status: the real dash stage. Fixes Home
     // claiming "Connected" while the Dash screen says it isn't.
-    val dashUi by dashViewModel.ui.collectAsState()
-    val conn = when (dashUi.stage) {
-        ConnStage.STREAMING -> ConnectionState.Connected
-        ConnStage.WIFI, ConnStage.AUTH -> ConnectionState.Searching
-        else -> ConnectionState.Offline
+    //
+    // IMPORTANT: collect WITHOUT reading the state in the composable body. While streaming,
+    // dashViewModel.ui updates ~15×/s (frame counter, rider position…). Reading it directly here
+    // recomposed the entire nav scaffold 15×/s, which starved/janked the bottom-nav tabs — you
+    // couldn't open Home while connected. derivedStateOf re-evaluates cheaply but only recomposes
+    // readers when `conn` actually changes (i.e. when the STAGE changes).
+    val dashUiState = dashViewModel.ui.collectAsState()
+    val conn by remember {
+        derivedStateOf {
+            when (dashUiState.value.stage) {
+                ConnStage.STREAMING -> ConnectionState.Connected
+                ConnStage.WIFI, ConnStage.AUTH -> ConnectionState.Searching
+                else -> ConnectionState.Offline
+            }
+        }
     }
 
     // Prefetch map tiles the moment a destination resolves (internet still reachable here)

@@ -46,7 +46,7 @@ android {
         targetSdk = 36
         // Marketing version stays 1.3 (shown as 1.3.0 in-app); versionCode just increments so
         // updates install in place — it isn't user-facing.
-        versionCode = 10
+        versionCode = 11
         versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

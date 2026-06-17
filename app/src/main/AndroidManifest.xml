@@ -16,6 +16,11 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Keep streaming to the dash with the screen off -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Cross-OEM background reliability: OxygenOS / One UI / MIUI / ColorOS kill the foreground
+         service (and freeze GPS) with the screen off unless the app is exempt from battery
+         optimization. We request the exemption via the standard system dialog so screen-off dash
+         streaming behaves the same on every device. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
         tools:targetApi="34" />

@@ -98,6 +98,13 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
 
     val streaming = ui.stage == ConnStage.STREAMING
 
+    // Cross-OEM: is the app exempt from battery optimization? Without it, OxygenOS/One UI/MIUI/etc.
+    // kill the stream when the screen turns off. Re-checked on resume (the rider grants it in a
+    // system dialog and returns).
+    var batteryOk by remember {
+        mutableStateOf(com.example.northstar.util.DeviceReadiness.isIgnoringBatteryOptimizations(context))
+    }
+
     // Auto-connect on opening the Dash screen, so the rider doesn't tap "Connect" every
     // ride — just open the app. Fires once; if the dash is off it errors out quietly and
     // the rider can retry. (Needs permissions already granted from a prior run.)
@@ -117,13 +124,15 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME &&
-                uiState.value.needsWifiOn &&
-                (context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
-                    as android.net.wifi.WifiManager).isWifiEnabled &&
-                hasEssentialPermissions()
-            ) {
-                vm.connect()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                batteryOk = com.example.northstar.util.DeviceReadiness.isIgnoringBatteryOptimizations(context)
+                if (uiState.value.needsWifiOn &&
+                    (context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                        as android.net.wifi.WifiManager).isWifiEnabled &&
+                    hasEssentialPermissions()
+                ) {
+                    vm.connect()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
@@ -239,6 +248,43 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                         "Joystick: $btn",
                         color = Gold, fontSize = 11.sp, fontFamily = GeistMonoFamily,
                         modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+
+        // Cross-OEM background-activity prompt: without the battery-optimization exemption,
+        // OxygenOS / One UI / MIUI / ColorOS kill the stream once the screen turns off. Shown
+        // until granted; the system dialog is uniform across devices.
+        if (!streaming && !batteryOk) {
+            NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(
+                            "Allow background activity",
+                            color = Warn, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Some phones (OnePlus, Samsung, Xiaomi…) stop the dash stream when the " +
+                                "screen turns off unless Northstar may run in the background.",
+                            color = TextMid, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                    NorthstarBtn(
+                        "Allow",
+                        onClick = {
+                            runCatching {
+                                context.startActivity(com.example.northstar.util.DeviceReadiness.batteryExemptionIntent(context))
+                            }.onFailure {
+                                runCatching { context.startActivity(com.example.northstar.util.DeviceReadiness.appSettingsIntent(context)) }
+                            }
+                        },
+                        variant = BtnVariant.Primary,
+                        size = BtnSize.Sm,
                     )
                 }
             }

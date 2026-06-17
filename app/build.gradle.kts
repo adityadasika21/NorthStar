@@ -44,8 +44,10 @@ android {
         // don't pretend to support it. Also makes the API-26 notification paths always safe.
         minSdk = 29
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.3.3"
+        // Marketing version stays 1.3 (shown as 1.3.0 in-app); versionCode just increments so
+        // updates install in place — it isn't user-facing.
+        versionCode = 10
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

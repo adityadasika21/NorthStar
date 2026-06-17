@@ -195,6 +195,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                         // Dash is gone for good (bike powered off / out of range) → the ride is
                         // over. Save it even though the user never tapped Disconnect.
                         stopRecording()
+                        // …and release everything connect() acquired (wake/wifi locks, GPS,
+                        // encoder loop). These used to leak when a connection ENDED on failure
+                        // rather than via the Disconnect button, draining the battery in the
+                        // background until the app was force-closed.
+                        userWantsConnection = false
+                        releaseBackgroundResources()
+                        session.disconnect()   // wifi status stays ERROR → stage remains ERROR
                         _ui.value = _ui.value.copy(errorMessage = ws.error); refreshStage()
                     }
                     else -> refreshStage()
@@ -222,6 +229,16 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                                 session.connect(_ui.value.ssid, wifiManager.network)
                         } else {
                             _ui.update { it.copy(retryAttempt = 0) }
+                            // Retries exhausted while the WiFi link is still up → give up and
+                            // free the background resources. The session stays in ERROR, so the
+                            // Dash screen keeps showing "Couldn't connect" + Try again; only the
+                            // wake/wifi locks, GPS and encoder loop are released.
+                            if (userWantsConnection && authAttempts >= MAX_AUTH_ATTEMPTS &&
+                                wifiManager.state.value.status == WifiConnStatus.CONNECTED
+                            ) {
+                                userWantsConnection = false
+                                releaseBackgroundResources()
+                            }
                         }
                     }
                     else -> {}
@@ -292,12 +309,23 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     fun disconnect() {
         userWantsConnection = false
         stopRecording()        // a connect→disconnect session = one saved ride
-        teardown()
         session.disconnect()
         wifiManager.disconnect()
-        location.stop()
-        DashKeepAliveService.stop(getApplication())
+        releaseBackgroundResources()
         refreshStage()
+    }
+
+    /**
+     * Release everything that keeps the CPU/GPS/WiFi awake: the foreground service
+     * (PARTIAL_WAKE_LOCK + WifiLock), GPS updates, and the encoder/stream loop. Called
+     * whenever the connection has ended so the app stops draining the battery in the
+     * background — on an explicit disconnect, on a terminal connection failure (dash
+     * unreachable / handshake exhausted), and when the ViewModel is cleared.
+     */
+    private fun releaseBackgroundResources() {
+        teardown()                                   // stream loop + encoder + frame bitmap
+        location.stop()                              // stop GPS updates
+        DashKeepAliveService.stop(getApplication())  // release wake + wifi locks
     }
 
     // ── Ride recording (the connected session) ───────────────────────────────
@@ -808,10 +836,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         stopRecording()        // save the in-progress ride if the app is closed mid-session
-        teardown()
         session.disconnect()
         wifiManager.disconnect()
-        location.stop()
+        // Streaming can't continue once the ViewModel is gone, so make sure the foreground
+        // service + wake/wifi locks + GPS don't outlive it (otherwise they'd hold the CPU/WiFi
+        // awake with nothing producing frames).
+        releaseBackgroundResources()
         voice.shutdown()
     }
 }

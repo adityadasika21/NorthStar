@@ -70,18 +70,42 @@ class DashKeepAliveService : Service() {
         createChannel()
         // The LOCATION type is what lets GPS keep updating with the screen off —
         // without it Android 14+ freezes location for backgrounded apps and the
-        // rider marker sticks at its first fix.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIF_ID, buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-            )
-        } else {
-            startForeground(NOTIF_ID, buildNotification())
+        // rider marker sticks at its first fix. BUT on Android 14+ starting an FGS
+        // with the LOCATION type while ACCESS_FINE/COARSE_LOCATION is NOT granted
+        // throws SecurityException and crashes the process. This service can be
+        // started from the "Start navigation" flow before the rider has ever granted
+        // location (the Dash screen is the only place that requests it), so only
+        // claim the LOCATION type when the permission is actually held. CONNECTED_DEVICE
+        // is satisfied by CHANGE_NETWORK_STATE (a normal, install-time permission), so
+        // it's always safe.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                if (hasLocationPermission()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                else Log.w(TAG, "Location not granted — starting FGS without the LOCATION type")
+                startForeground(NOTIF_ID, buildNotification(), type)
+            } else {
+                startForeground(NOTIF_ID, buildNotification())
+            }
+            acquireLocks()
+            Log.i(TAG, "Foreground service up — wake+wifi locks held")
+        } catch (e: Exception) {
+            // Never let a foreground-service start crash the app (e.g. the OS denying
+            // the type, or a background-start window restriction). The streaming
+            // pipeline lives in DashViewModel and can still run; we just lose the
+            // wake/wifi locks (screen-off resilience), which the rider can recover
+            // from the Dash screen once permissions are granted.
+            Log.e(TAG, "Foreground service start failed — continuing without locks", e)
+            stopSelf()
         }
-        acquireLocks()
-        Log.i(TAG, "Foreground service up — wake+wifi locks held")
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        val fine = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val coarse = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        return fine || coarse
     }
 
     private fun acquireLocks() {

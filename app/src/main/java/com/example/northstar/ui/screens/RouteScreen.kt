@@ -1,5 +1,11 @@
 package com.example.northstar.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +63,26 @@ fun RouteScreen(
     var sent by remember { mutableStateOf(false) }
     var showSave by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<com.example.northstar.data.SavedLocation?>(null) }
+
+    // Nav needs GPS (+ NEARBY_WIFI_DEVICES on 13+ to reach the dash). The Dash screen
+    // requests these, but a rider can go straight Share → Route → Start navigation
+    // without ever opening Dash — so request them here too. Without this the ride
+    // starts with no GPS (and previously crashed the foreground service on 14+).
+    val navPermissions = remember {
+        buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                add(Manifest.permission.NEARBY_WIFI_DEVICES)
+        }.toTypedArray()
+    }
+    fun hasLocationPermission() =
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+    // Whether or not the grant succeeds, proceed (the service start is now defensive and
+    // the rider can still preview); denying just means no live GPS until they grant it.
+    val navPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { sent = true }
 
     LaunchedEffect(sent) {
         if (sent) {
@@ -224,7 +250,7 @@ fun RouteScreen(
                     routeState.routing     -> "Finding route…"
                     else                   -> "Start navigation"
                 },
-                onClick = { sent = true },
+                onClick = { if (hasLocationPermission()) sent = true else navPermLauncher.launch(navPermissions) },
                 icon = if (sent) NorthstarIcons.Check else NorthstarIcons.Navi,
                 variant = if (sent) BtnVariant.Secondary else BtnVariant.Primary,
                 size = BtnSize.Lg,

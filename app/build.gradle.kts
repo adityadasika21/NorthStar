@@ -96,6 +96,18 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    // Firebase product suite (all gated at runtime behind FirebaseGate — no google-services.json
+    // ⇒ default FirebaseApp never initializes ⇒ these are dormant and the app runs fully local).
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.perf)
+    implementation(libs.firebase.config)
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.appcheck)
+    implementation(libs.firebase.appcheck.playintegrity)
+    // Debug-only App Check provider (loaded via reflection in FirebaseFeatures) so the
+    // release classpath stays on Play Integrity only.
+    debugImplementation(libs.firebase.appcheck.debug)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.google.identity.googleid)

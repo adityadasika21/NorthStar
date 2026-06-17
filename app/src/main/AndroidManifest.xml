@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- startScan() to warm scan results so we resolve the exact dash SSID on the first try -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <!-- Android 13+: WiFi connection without location permission -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
@@ -75,6 +77,16 @@
             android:name=".dash.DashKeepAliveService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
+
+        <!-- Firebase Cloud Messaging receiver. Dormant unless a Firebase project is wired up
+             (google-services.json) and a push arrives. -->
+        <service
+            android:name=".data.NorthstarMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- Shares stored service invoices (image/PDF) with an external viewer. -->
         <provider

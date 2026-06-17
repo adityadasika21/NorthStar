@@ -11,6 +11,7 @@ composeBom = "2026.02.01"
 navigationCompose = "2.8.9"
 firebaseBom = "34.14.0"
 googleServices = "4.4.4"
+firebaseCrashlyticsPlugin = "3.0.3"
 lifecycleViewmodelCompose = "2.8.7"
 coroutinesPlayServices = "1.8.1"
 credentials = "1.3.0"
@@ -64,4 +65,5 @@ maplibre-annotation = { group = "org.maplibre.gl", name = "android-plugin-annota
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlyticsPlugin" }
 

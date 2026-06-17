@@ -13,6 +13,9 @@ plugins {
 
 if (project.file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
+    // Required by the Crashlytics SDK — it injects a build ID resource at build time, and
+    // without it FirebaseInitProvider throws "Crashlytics build ID is missing" on EVERY launch.
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 // Release signing is loaded from a gitignored signing.properties at the repo root (see
@@ -41,8 +44,8 @@ android {
         // don't pretend to support it. Also makes the API-26 notification paths always safe.
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 6
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

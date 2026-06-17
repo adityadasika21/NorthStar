@@ -48,6 +48,7 @@ data class DashUiState(
     val headingUp: Boolean = true,
     val followMode: Boolean = true,
     val thermal: String = "OK",
+    val needsWifiOn: Boolean = false,   // Wi‑Fi radio is off → UI prompts to enable it
     // For the in-app Google Map view
     val riderLat: Double? = null,
     val riderLng: Double? = null,
@@ -310,7 +311,18 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     fun connect() {
         userWantsConnection = true
         authAttempts = 0
-        _ui.update { it.copy(errorMessage = null, retryAttempt = 0) }
+        _ui.update { it.copy(errorMessage = null, retryAttempt = 0, needsWifiOn = false) }
+
+        // The dash link needs the Wi‑Fi radio on (WifiNetworkSpecifier joins it as a separate
+        // per-app network — the phone's current Wi‑Fi/cellular is untouched). Android 10+ won't
+        // let us enable Wi‑Fi for the user, so if it's off, surface it immediately and let the UI
+        // open the Wi‑Fi panel — far better than a silent 30s timeout.
+        if (!wifiManager.isWifiEnabled()) {
+            userWantsConnection = false
+            _ui.update { it.copy(stage = ConnStage.ERROR, needsWifiOn = true,
+                errorMessage = "Turn on Wi‑Fi to connect to the dash") }
+            return
+        }
         com.example.northstar.data.RideDiagnostics.init(getApplication())
         com.example.northstar.data.RideDiagnostics.start("connect")
         com.example.northstar.data.RideDiagnostics.log(

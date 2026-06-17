@@ -49,6 +49,16 @@ class DashWifiManager(
     }
 
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+    /**
+     * Is the phone's Wi‑Fi radio on? WifiNetworkSpecifier can only associate to the dash when
+     * Wi‑Fi is enabled, and on Android 10+ the app can't enable it itself — so we check up front
+     * and have the UI send the rider to the Wi‑Fi settings panel rather than silently timing out.
+     * (Doesn't matter which network Wi‑Fi is currently joined to — the specifier connects the dash
+     * as a separate per-app network.)
+     */
+    fun isWifiEnabled(): Boolean = wifi.isWifiEnabled
 
     private val _state = MutableStateFlow(WifiState())
     val state = _state.asStateFlow()

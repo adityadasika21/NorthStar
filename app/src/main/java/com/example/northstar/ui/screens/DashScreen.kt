@@ -111,6 +111,25 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
         }
     }
 
+    // If the rider was prompted to turn Wi‑Fi on and comes back to the app with it now enabled
+    // (e.g. from the Wi‑Fi panel), retry the connection automatically — no second tap needed.
+    val uiState = rememberUpdatedState(ui)
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME &&
+                uiState.value.needsWifiOn &&
+                (context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)
+                    as android.net.wifi.WifiManager).isWifiEnabled &&
+                hasEssentialPermissions()
+            ) {
+                vm.connect()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -177,10 +196,23 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                     }
                     if (ui.stage == ConnStage.OFFLINE || ui.stage == ConnStage.ERROR) {
                         NorthstarBtn(
-                            if (ui.stage == ConnStage.ERROR) "Try again" else "Connect",
+                            when {
+                                ui.needsWifiOn -> "Turn on Wi‑Fi"
+                                ui.stage == ConnStage.ERROR -> "Try again"
+                                else -> "Connect"
+                            },
                             onClick = {
-                                if (hasEssentialPermissions()) vm.connect()
-                                else permissionLauncher.launch(requestedPermissions)
+                                when {
+                                    // Android 10+ won't let us toggle Wi‑Fi — open the system Wi‑Fi
+                                    // panel (slide-up, stays in-app). connect() auto-retries on resume.
+                                    ui.needsWifiOn -> runCatching {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.Panel.ACTION_WIFI)
+                                        )
+                                    }
+                                    hasEssentialPermissions() -> vm.connect()
+                                    else -> permissionLauncher.launch(requestedPermissions)
+                                }
                             },
                             icon = NorthstarIcons.Wifi,
                             variant = BtnVariant.Primary,

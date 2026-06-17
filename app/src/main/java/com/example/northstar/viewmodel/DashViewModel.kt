@@ -119,6 +119,9 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var smoothEtaSec = 0.0
     @Volatile private var etaArrivalMs = 0L
     private var lastArrivalCalcMs = 0L
+    // The minutes-remaining shown to the rider, refreshed on the same 5 s cadence as the arrival
+    // clock so it stops ticking/bouncing every second ("tacky ETA"). null = no active ETA.
+    @Volatile private var displayedEtaMin: Int? = null
 
     // Off-route → reroute, debounced. Now feasible because the app keeps cellular
     // internet while bound to the dash (per-socket binding), so Router can run mid-ride.
@@ -135,6 +138,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var frameBitmap: Bitmap? = null
     private var lastSignature = ""
     private var lastRedrawAt = 0L
+
+    // Ride diagnostics: one-shot "first frame" marker + a throttle for the periodic ride line.
+    @Volatile private var loggedFirstFrame = false
+    private var lastDiagMs = 0L
 
     companion object {
         private const val MANUAL_IDLE_MS = 8_000L
@@ -165,6 +172,19 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         return Math.toDegrees(lat2) to Math.toDegrees(lng2)
     }
 
+    /**
+     * Distance (m) to dead-reckon ahead of the last GPS fix, given the time since it arrived.
+     * Full speed for the first ~1 s (covers the normal 1 Hz fix gap), then an exponentially
+     * tapering contribution that saturates at ~1.5 s of extra travel — so a long dropout glides
+     * smoothly instead of freezing, but can't over-shoot far past an unannounced brake/stop.
+     */
+    private fun predictedDistance(speedMps: Float, elapsedSec: Double): Double {
+        val full = elapsedSec.coerceIn(0.0, 1.0)
+        val taper = (elapsedSec - 1.0).coerceAtLeast(0.0)
+        val extra = 1.5 * (1.0 - Math.exp(-taper / 1.5))
+        return speedMps * (full + extra)
+    }
+
     init {
         // Reflect the rider's stored dash WiFi config (SSID may be blank until discovered).
         _ui.value = _ui.value.copy(ssid = dashConfig.ssid, wifiPassword = dashConfig.password)
@@ -178,6 +198,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             wifiManager.state.collect { ws ->
+                com.example.northstar.data.RideDiagnostics.log(
+                    "wifi",
+                    ws.status.toString() +
+                        (ws.ssid.takeIf { it.isNotBlank() }?.let { " ssid=$it" } ?: "") +
+                        (ws.error?.let { " err=$it" } ?: ""),
+                )
                 when (ws.status) {
                     WifiConnStatus.CONNECTED -> {
                         refreshStage()
@@ -203,6 +229,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                         releaseBackgroundResources()
                         session.disconnect()   // wifi status stays ERROR → stage remains ERROR
                         _ui.value = _ui.value.copy(errorMessage = ws.error); refreshStage()
+                        com.example.northstar.data.RideDiagnostics.stop("wifi error / dash gone")
                     }
                     else -> refreshStage()
                 }
@@ -211,6 +238,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             session.state.collect { state ->
+                com.example.northstar.data.RideDiagnostics.log("session", "→ $state")
                 refreshStage()
                 when (state) {
                     DashState.READY -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0) }; startStream() }
@@ -238,6 +266,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                             ) {
                                 userWantsConnection = false
                                 releaseBackgroundResources()
+                                com.example.northstar.data.RideDiagnostics.log("error", "auth exhausted after $authAttempts attempts — giving up")
+                                com.example.northstar.data.RideDiagnostics.stop("auth exhausted")
                             }
                         }
                     }
@@ -246,7 +276,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        session.onError = { msg -> _ui.value = _ui.value.copy(errorMessage = msg); refreshStage() }
+        session.onError = { msg ->
+            com.example.northstar.data.RideDiagnostics.log("error", msg)
+            _ui.value = _ui.value.copy(errorMessage = msg); refreshStage()
+        }
         // Joystick → map zoom only. RIGHT (0x09) = zoom in, LEFT (0x0A) = zoom out.
         // No exit gesture, no other map control (media section is for media).
         session.onButton = { btn ->
@@ -279,6 +312,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         userWantsConnection = true
         authAttempts = 0
         _ui.value = _ui.value.copy(errorMessage = null, retryAttempt = 0)
+        com.example.northstar.data.RideDiagnostics.init(getApplication())
+        com.example.northstar.data.RideDiagnostics.start("connect")
+        com.example.northstar.data.RideDiagnostics.log(
+            "connect", "ssid='${dashConfig.ssid}' needsDiscovery=${dashConfig.needsDiscovery} dest=${_ui.value.destinationName}",
+        )
+        loggedFirstFrame = false
         DashKeepAliveService.start(getApplication())
         location.start()
         startRecording()
@@ -308,11 +347,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnect() {
         userWantsConnection = false
+        com.example.northstar.data.RideDiagnostics.log("connect", "user disconnect")
         stopRecording()        // a connect→disconnect session = one saved ride
         session.disconnect()
         wifiManager.disconnect()
         releaseBackgroundResources()
         refreshStage()
+        com.example.northstar.data.RideDiagnostics.stop("disconnect")
     }
 
     /**
@@ -370,7 +411,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         destLng = lng
         route = null
         progressM = 0.0
-        smoothEtaSec = 0.0; etaArrivalMs = 0L   // fresh ETA for the new route
+        smoothEtaSec = 0.0; etaArrivalMs = 0L; displayedEtaMin = null   // fresh ETA for the new route
         voice.resetTrip()   // fresh announcements for the new route
         session.updateRouteCard(name)
         if (lat != null && lng != null) {
@@ -388,7 +429,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         progressM = 0.0
         offRouteSince = 0L
         panX = 0f; panY = 0f; followMode = true
-        smoothEtaSec = 0.0; etaArrivalMs = 0L
+        smoothEtaSec = 0.0; etaArrivalMs = 0L; displayedEtaMin = null
         voice.resetTrip()
         lastSignature = ""   // force a redraw with no route line
         _ui.value = _ui.value.copy(
@@ -434,9 +475,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         if (clamped == zoom) return
         zoom = clamped
         _ui.value = _ui.value.copy(mapZoom = zoom)
-        // Render the new level next tick (the renderer bridges the gap with scaled
-        // neighbouring-zoom tiles), and warm the real tiles for that level right now so
-        // they sharpen in quickly instead of the map sitting blank.
+        // Make zoom feel instant: force a redraw on the very next tick (the renderer bridges the
+        // gap with scaled neighbouring-zoom tiles) and hold full frame-rate briefly so the change
+        // lands within one ~15 fps frame even when stopped (idle would otherwise run at 8 fps).
+        // Also warm the real tiles for the new level so the scaled view sharpens in quickly.
+        lastSignature = ""
+        lastMotionMs = System.currentTimeMillis()
         if (camInit) tiles.prefetchZoom(camLat, camLng, zoom)
     }
     fun panBy(dx: Float, dy: Float) = manualPan(dx, dy)
@@ -459,12 +503,19 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     // ── Video + nav loop ────────────────────────────────────────────────────
 
     private fun startStream() {
+        com.example.northstar.data.RideDiagnostics.log("stream", "startStream — encoder up, RTP→dash beginning")
         val packetizer = RtpPacketizer { rtpPkt -> session.sendRtp(rtpPkt) }
         val nalProc    = NalProcessor { nal, _ ->
             packetizer.packetize(nal, endOfAU = true, wallClockMs = System.currentTimeMillis())
         }
-        val onEncoded: (ByteArray, Boolean) -> Unit = { annexB, _ ->
+        val onEncoded: (ByteArray, Boolean) -> Unit = { annexB, isKey ->
             nalProc.process(annexB)
+            // First encoded frame leaving the phone — its delay after READY is the prime suspect
+            // for the dash's "Timeout!" (the dash waits for video and gives up if it's late).
+            if (!loggedFirstFrame) {
+                loggedFirstFrame = true
+                com.example.northstar.data.RideDiagnostics.log("stream", "first video frame sent (key=$isKey, ${annexB.size}B)")
+            }
             // Atomic update: this runs on the encoder's callback thread, concurrent with the
             // frame loop's _ui writes — a plain copy() read-modify-write would drop updates.
             _ui.update { it.copy(frameCount = it.frameCount + 1) }
@@ -566,6 +617,9 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             val nowMs = System.currentTimeMillis()
             if (etaArrivalMs == 0L || nowMs - lastArrivalCalcMs > 5_000) {
                 etaArrivalMs = nowMs + (smoothEtaSec * 1000).toLong()
+                // Refresh the displayed minutes only here (every 5 s) — not every tick — so the
+                // ETA reads steady like Google Maps instead of flickering with per-second jitter.
+                displayedEtaMin = Math.round(smoothEtaSec / 60.0).toInt()
                 lastArrivalCalcMs = nowMs
             }
             // Feed the dash's own turn-by-turn widget with CORRECT distances (next-turn
@@ -598,12 +652,26 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             riderLng = matchedLng,
             riderBearing = heading,
             remainingKm = remainingM?.let { it / 1000.0 },
-            etaMinutes = etaSec?.let { (it / 60.0).toInt() },
+            etaMinutes = if (etaSec != null) displayedEtaMin else null,
             maneuver = null,
             offRoute = offRoute,
         )
 
         updateThermal()
+
+        // Periodic ride snapshot (~15 s) — GPS quality, motion, frame throughput and thermal,
+        // so a post-ride read shows where the map stuttered (weak GPS) or the dash struggled.
+        val nowD = System.currentTimeMillis()
+        if (nowD - lastDiagMs > 15_000) {
+            lastDiagMs = nowD
+            com.example.northstar.data.RideDiagnostics.log(
+                "ride",
+                "gps=" + (loc?.let { "acc=%.0fm spd=%.1fm/s".format(it.accuracy, it.speed) } ?: "none") +
+                    " moving=$camMoving frames=${_ui.value.frameCount} thermal=${_ui.value.thermal}" +
+                    " remaining=" + (remainingM?.let { "%.1fkm".format(it / 1000.0) } ?: "-") +
+                    " offRoute=$offRoute",
+            )
+        }
 
         // ── Predictive, framerate-independent camera (CarPlay-smooth) ──
         // Capture each fresh GPS fix + its velocity for dead-reckoning.
@@ -618,13 +686,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         val rider: Pair<Double, Double>? = when {
             loc == null -> null
             fixSpeed > 0.5f -> {
-                // Only bridge the gap to the NEXT fix (~0.5 s at 2 Hz). A long horizon (1.5 s)
-                // over-shoots on braking: the predictor flings the camera ahead, then the next
-                // fix shows you slowed, so it snaps back — the "slowing slows the map" jerk.
-                // 0.8 s covers the fix gap with margin while keeping the correction tiny, and the
-                // SMOOTH_TAU low-pass absorbs what's left → no visible yank when decelerating.
-                val elapsed = ((System.currentTimeMillis() - fixWallMs) / 1000.0).coerceAtMost(0.8)
-                project(fixLat, fixLng, fixBearing.toDouble(), fixSpeed * elapsed)
+                // Dead-reckon forward from the last fix so the camera keeps GLIDING through GPS
+                // gaps instead of freezing then snapping ("stuck then jump"). predictedDistance
+                // runs at full speed for the first ~1 s (the normal 1 Hz fix gap) then tapers, so
+                // a long dropout — or a brake/stop the predictor hasn't heard about yet — can't
+                // fling the camera far ahead; the next fix then needs only a tiny eased correction.
+                val elapsed = (System.currentTimeMillis() - fixWallMs) / 1000.0
+                project(fixLat, fixLng, fixBearing.toDouble(), predictedDistance(fixSpeed, elapsed))
             }
             else -> matchedLat!! to matchedLng!!
         }
@@ -638,7 +706,17 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         val nowNs = System.nanoTime()
         val dt = if (lastTickNs == 0L) 0.042 else ((nowNs - lastTickNs) / 1e9).coerceIn(0.0, 0.5)
         lastTickNs = nowNs
-        val a = if (camInit) (1.0 - Math.exp(-dt / SMOOTH_TAU)) else 1.0
+        // Adaptive smoothing: ease HARDER (bigger time constant) when the fix is noisy so weak-GPS
+        // jitter doesn't reach the camera, and stay snappy when the signal is clean. This is the
+        // other half of the "stuck then jump" fix — the predictor bridges gaps, this absorbs the
+        // lateral noise that makes a poor signal jitter.
+        val acc = loc?.accuracy ?: 12f
+        val tau = when {
+            acc > 25f -> SMOOTH_TAU * 2.0   // poor signal → heavy smoothing
+            acc > 12f -> SMOOTH_TAU * 1.5   // fair
+            else      -> SMOOTH_TAU         // good → responsive
+        }
+        val a = if (camInit) (1.0 - Math.exp(-dt / tau)) else 1.0
 
         val prevLat = camLat; val prevLng = camLng
         if (haveTarget) {
@@ -692,12 +770,18 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         if (!offRoute || loc == null || dLat == null || dLng == null) { offRouteSince = 0L; return }
         val now = System.currentTimeMillis()
         if (offRouteSince == 0L) offRouteSince = now
-        if (now - offRouteSince < 4_000 || now - lastRerouteAt < 12_000 || rerouting) return
+        // Reroute faster: 2 s off-line confirms a real miss (not a GPS wobble), 6 s cooldown
+        // between attempts. Was 4 s / 12 s, which felt sluggish after a missed turn.
+        if (now - offRouteSince < 2_000 || now - lastRerouteAt < 6_000 || rerouting) return
         lastRerouteAt = now
         rerouting = true
-        android.util.Log.i("DashViewModel", "Off-route ${(now - offRouteSince) / 1000}s → rerouting")
+        val offSec = (now - offRouteSince) / 1000
+        android.util.Log.i("DashViewModel", "Off-route ${offSec}s → rerouting")
+        com.example.northstar.data.RideDiagnostics.log("reroute", "off-route ${offSec}s → requesting new route")
+        val startMs = System.currentTimeMillis()
         viewModelScope.launch {
             val r = Router.route(GeoPoint(loc.latitude, loc.longitude), GeoPoint(dLat, dLng))
+            val took = System.currentTimeMillis() - startMs
             if (r != null) {
                 route = r
                 progressM = 0.0
@@ -705,8 +789,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 tiles.prefetchRoute(r.geometry)
                 _ui.value = _ui.value.copy(hasRoute = true, routePoints = r.geometry)
                 android.util.Log.i("DashViewModel", "Reroute ok: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m")
+                com.example.northstar.data.RideDiagnostics.log("reroute", "new route in ${took}ms (${r.geometry.size} pts, ${r.totalMeters.toInt()} m)")
             } else {
                 android.util.Log.w("DashViewModel", "Reroute failed (no internet?)")
+                com.example.northstar.data.RideDiagnostics.log("reroute", "FAILED after ${took}ms (no internet?)")
             }
             rerouting = false
         }
@@ -843,5 +929,6 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // awake with nothing producing frames).
         releaseBackgroundResources()
         voice.shutdown()
+        com.example.northstar.data.RideDiagnostics.stop("app closed")
     }
 }

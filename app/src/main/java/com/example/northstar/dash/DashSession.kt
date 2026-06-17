@@ -37,6 +37,9 @@ class DashSession(private val scope: CoroutineScope) {
     private var auth: DashAuth? = null
     @Volatile private var authConfirmed = false
     @Volatile private var authRetries = 0
+    // One-shot: the first time the dash reports it DECODED our video (09 06 55). If this never
+    // appears in the ride log, the dash never accepted the stream — the likely "Timeout!" cause.
+    @Volatile private var loggedFirstAck = false
 
     var onButton: ((Byte) -> Unit)? = null
     var onError:  ((String) -> Unit)? = null
@@ -150,6 +153,7 @@ class DashSession(private val scope: CoroutineScope) {
             auth = DashAuth(ssid)
             authConfirmed = false
             authRetries = 0
+            loggedFirstAck = false
 
             // RX loop MUST be running before the burst (early pubkey + no ICMP).
             launchReceiveLoop(sock)
@@ -162,6 +166,7 @@ class DashSession(private val scope: CoroutineScope) {
                 sock.send(pkt)
                 delay(BURST_PAUSE)
             }
+            com.example.northstar.data.RideDiagnostics.log("auth", "initial burst sent — waiting up to ${AUTH_TIMEOUT}ms for 07 01 01")
 
             Log.i(TAG, "Waiting up to ${AUTH_TIMEOUT}ms for auth (07 01 01)…")
             val deadline = System.currentTimeMillis() + AUTH_TIMEOUT
@@ -172,10 +177,12 @@ class DashSession(private val scope: CoroutineScope) {
                 return
             }
             Log.i(TAG, "Authenticated ✓")
+            com.example.northstar.data.RideDiagnostics.log("auth", "authenticated (07 01 01) — entering nav mode")
 
             enterNavMode(sock)
             _state.value = DashState.READY
             Log.i(TAG, "READY ✓")
+            com.example.northstar.data.RideDiagnostics.log("session", "nav-mode kick sent — READY (waiting for video pipeline)")
 
         } catch (e: Exception) {
             Log.e(TAG, "Session error", e)
@@ -214,6 +221,7 @@ class DashSession(private val scope: CoroutineScope) {
                     // Link dropped (EBADF/ENETUNREACH) — end the loop cleanly instead of
                     // crashing the app; DashWifiManager handles reconnect.
                     Log.w(TAG, "RX loop stopped — socket error: ${e.message}")
+                    com.example.northstar.data.RideDiagnostics.log("error", "RX loop stopped — socket error: ${e.message}")
                     onError?.invoke("Lost connection to dash")
                     break
                 } ?: continue
@@ -239,12 +247,14 @@ class DashSession(private val scope: CoroutineScope) {
                 when (val ev = auth?.ingest(tlv)) {
                     is AuthEvent.SendKey -> {
                         Log.i(TAG, "Got RSA pubkey — sending q3c.d")
+                        com.example.northstar.data.RideDiagnostics.log("auth", "RSA pubkey received → sending session key (q3c.d)")
                         sock.send(ev.packet)
                     }
                     AuthEvent.Confirmed -> { authConfirmed = true }
                     AuthEvent.Rejected -> {
                         authRetries++
                         Log.w(TAG, "Auth rejected — retry #$authRetries")
+                        com.example.northstar.data.RideDiagnostics.log("auth", "REJECTED — retry #$authRetries")
                         auth?.reset()
                         if (authRetries <= 5) sock.send(DashCommands.authRequest())
                     }
@@ -256,6 +266,10 @@ class DashSession(private val scope: CoroutineScope) {
             if (tlv.type == 0x09 && tlv.sub == 0x06 &&
                 tlv.value.firstOrNull()?.toInt() == 0x55
             ) {
+                if (!loggedFirstAck) {
+                    loggedFirstAck = true
+                    com.example.northstar.data.RideDiagnostics.log("dash", "dash DECODED first IDR (09 06 55) — video accepted ✓")
+                }
                 sock.send(DashCommands.frameDecodedIdr())
                 continue
             }
@@ -357,6 +371,7 @@ class DashSession(private val scope: CoroutineScope) {
 
     private fun fail(msg: String) {
         Log.e(TAG, "ERROR — $msg")
+        com.example.northstar.data.RideDiagnostics.log("error", "session fail: $msg")
         rxJob?.cancel(); heartbeatJob?.cancel()
         socket?.close(); socket = null
         _state.value = DashState.ERROR

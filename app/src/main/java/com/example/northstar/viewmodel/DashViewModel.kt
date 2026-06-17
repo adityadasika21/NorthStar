@@ -111,8 +111,6 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     // marker stays put and the map slides under it). null = no GPS.
     @Volatile private var frameRiderLat: Double? = null
     @Volatile private var frameRiderLng: Double? = null
-    @Volatile private var camMoving = false   // drives the dynamic frame rate
-    private var lastMotionMs = 0L             // last time real motion was seen (fps hold-off)
 
     // Stable ETA (Google-like): the raw estimate jitters with instantaneous speed, so we
     // smooth it and only recompute the absolute arrival clock occasionally — no per-frame churn.
@@ -147,14 +145,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         private const val MANUAL_IDLE_MS = 8_000L
         private const val FORCE_REDRAW_MS = 2_000L
         private const val SMOOTH_TAU = 0.28      // camera smoothing time constant (s)
-        // The Tripper dash decoder is the real limiter: the better-dash reverse-engineering
-        // found it holds ~8–12 fps and "blinks" (drops/stutters) much above that — the stock
-        // RE app streams just 4 fps. Pushing 60 fps overran the decoder and looked LESS smooth.
-        // We sit just above their tested ceiling and let the dead-reckoning predictor interpolate
-        // motion between GPS fixes so each delivered frame still shows smooth movement.
-        private const val FPS_MOVING = 15        // matched to what the dash can decode steadily
-        private const val FPS_IDLE = 8           // throttle only when truly stopped (saves power)
-        private const val MOTION_HOLD_MS = 4_000L // stay at full fps this long after the last motion (rides through brief slow-downs)
+        // CONSTANT frame rate, the better-dash recommendation. The Tripper decoder "blinks"
+        // (stutters) above its ceiling, and the projection keep-alive MUST repeat at the encoder
+        // rate (4 Hz — see DashCommands/DashSession). Driving 15 fps (above the ceiling) with a
+        // dynamic speed-based rate is what made the dash jitter; a steady 4 fps matched to the
+        // keep-alive is what the dash decodes cleanly. The dead-reckoning predictor still smooths
+        // motion between the 1 Hz GPS fixes, so a delivered frame still shows continuous movement.
+        private const val FPS = 4
         private const val MAX_AUTH_ATTEMPTS = 4   // the fw 11.63 handshake often needs a couple of tries
     }
 
@@ -487,11 +484,9 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         zoom = clamped
         _ui.update { it.copy(mapZoom = zoom) }
         // Make zoom feel instant: force a redraw on the very next tick (the renderer bridges the
-        // gap with scaled neighbouring-zoom tiles) and hold full frame-rate briefly so the change
-        // lands within one ~15 fps frame even when stopped (idle would otherwise run at 8 fps).
-        // Also warm the real tiles for the new level so the scaled view sharpens in quickly.
+        // gap with scaled neighbouring-zoom tiles), and warm the real tiles for the new level so
+        // the scaled view sharpens in quickly.
         lastSignature = ""
-        lastMotionMs = System.currentTimeMillis()
         if (camInit) tiles.prefetchZoom(camLat, camLng, zoom)
     }
     fun panBy(dx: Float, dy: Float) = manualPan(dx, dy)
@@ -582,7 +577,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 // Dynamic pacing: buttery while moving, throttled when stopped (power).
-                delay(1000L / (if (camMoving) FPS_MOVING else FPS_IDLE))
+                // Constant 4 fps — matches the dash decoder + the 4 Hz projection keep-alive.
+                delay(1000L / FPS)
             }
         }
     }
@@ -678,7 +674,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             com.example.northstar.data.RideDiagnostics.log(
                 "ride",
                 "gps=" + (loc?.let { "acc=%.0fm spd=%.1fm/s".format(it.accuracy, it.speed) } ?: "none") +
-                    " moving=$camMoving frames=${_ui.value.frameCount} thermal=${_ui.value.thermal}" +
+                    " frames=${_ui.value.frameCount} thermal=${_ui.value.thermal}" +
                     " remaining=" + (remainingM?.let { "%.1fkm".format(it / 1000.0) } ?: "-") +
                     " offRoute=$offRoute",
             )
@@ -729,7 +725,6 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         }
         val a = if (camInit) (1.0 - Math.exp(-dt / tau)) else 1.0
 
-        val prevLat = camLat; val prevLng = camLng
         if (haveTarget) {
             if (!camInit) { camLat = targetLat; camLng = targetLng; camHdg = heading; camInit = true }
             else {
@@ -742,12 +737,6 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // Lock the dash marker to the smoothed centre (map slides under it).
         frameRiderLat = if (rider != null) camLat else null
         frameRiderLng = if (rider != null) camLng else null
-        // Drive the dynamic frame rate. Key off GPS speed (not tiny per-frame pixel deltas,
-        // which shrink as fps rises and wrongly throttled lane-speed riding) with a hold-off,
-        // so it stays ultra-smooth through slow lanes and only drops to idle when truly stopped.
-        val movedM = if (camInit) GeoPoint.distMeters(GeoPoint(prevLat, prevLng), GeoPoint(camLat, camLng)) else 0.0
-        if ((loc?.speed ?: 0f) > 0.6f || movedM > 0.6) lastMotionMs = System.currentTimeMillis()
-        camMoving = System.currentTimeMillis() - lastMotionMs < MOTION_HOLD_MS
 
         val centerLat = if (haveTarget) camLat else 0.0
         val centerLng = if (haveTarget) camLng else 0.0

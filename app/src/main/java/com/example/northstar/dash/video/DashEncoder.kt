@@ -30,9 +30,10 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
     companion object {
         const val WIDTH   = 526
         const val HEIGHT  = 300
-        // Matched to the dash decoder's real ceiling (better-dash: ~8–12 fps before it "blinks";
-        // stock RE app uses 4). The loop feeds ~15 while moving and throttles when idle.
-        const val FPS     = 15          // max/hint; the loop feeds ~15 while moving, throttles when idle
+        // Constant rate, the better-dash recommendation: the stock RE app and better-dash both
+        // stream 4 fps and the projection keep-alive repeats at 4 Hz. The decoder "blinks" above
+        // its ceiling, so a steady 4 fps (matched to the keep-alive) is what it decodes cleanly.
+        const val FPS     = 4
         // ~1.2 Mbps. 0.8 briefly blocked/pixelated on high-motion frames (sharp turns, zoom) before
         // the rate settled; 1.2 gives the encoder headroom for those moments yet stays far under the
         // old 2.0 that overran the decoder.

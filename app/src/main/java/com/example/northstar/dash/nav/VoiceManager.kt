@@ -94,7 +94,7 @@ class VoiceManager private constructor(context: Context) {
             farDone = false; nearDone = false
         }
         when {
-            distanceM in 0.0..NEAR_M && !nearDone -> {
+            distanceM < NEAR_M && !nearDone -> {
                 nearDone = true; farDone = true
                 if (_mode.value == VoiceMode.FULL) speak("Now, ${turnPhrase(maneuver)}") else chime()
             }

@@ -16,7 +16,6 @@ import com.example.northstar.dash.map.MapRenderer
 import com.example.northstar.dash.map.Mercator
 import com.example.northstar.dash.map.TileProvider
 import com.example.northstar.dash.nav.GeoPoint
-import com.example.northstar.dash.nav.NavEngine
 import com.example.northstar.dash.nav.Route
 import com.example.northstar.dash.nav.Router
 import com.example.northstar.dash.protocol.DashCommands
@@ -187,13 +186,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // Reflect the rider's stored dash WiFi config (SSID may be blank until discovered).
-        _ui.value = _ui.value.copy(ssid = dashConfig.ssid, wifiPassword = dashConfig.password)
+        _ui.update { it.copy(ssid = dashConfig.ssid, wifiPassword = dashConfig.password) }
 
         // When we connect to a previously-unknown dash by prefix, learn + persist its exact
         // SSID so subsequent connects target it directly (no system picker again).
         wifiManager.onSsidResolved = { learned ->
             dashConfig.ssid = learned
-            _ui.value = _ui.value.copy(ssid = learned)
+            _ui.update { it.copy(ssid = learned) }
         }
 
         viewModelScope.launch {
@@ -228,7 +227,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                         userWantsConnection = false
                         releaseBackgroundResources()
                         session.disconnect()   // wifi status stays ERROR → stage remains ERROR
-                        _ui.value = _ui.value.copy(errorMessage = ws.error); refreshStage()
+                        _ui.update { it.copy(errorMessage = ws.error) }; refreshStage()
                         com.example.northstar.data.RideDiagnostics.stop("wifi error / dash gone")
                     }
                     else -> refreshStage()
@@ -278,7 +277,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         session.onError = { msg ->
             com.example.northstar.data.RideDiagnostics.log("error", msg)
-            _ui.value = _ui.value.copy(errorMessage = msg); refreshStage()
+            _ui.update { it.copy(errorMessage = msg) }; refreshStage()
         }
         // Joystick → map zoom only. RIGHT (0x09) = zoom in, LEFT (0x0A) = zoom out.
         // No exit gesture, no other map control (media section is for media).
@@ -289,7 +288,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 0x0A -> { zoomOut(); "Zoom out (left)" }
                 else -> "code 0x${code.toString(16).uppercase()}"
             }
-            _ui.value = _ui.value.copy(lastButton = label)
+            _ui.update { it.copy(lastButton = label) }
         }
     }
 
@@ -303,7 +302,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             wifi == WifiConnStatus.REQUESTING || wifi == WifiConnStatus.CONNECTED -> ConnStage.WIFI
             else -> ConnStage.OFFLINE
         }
-        _ui.value = _ui.value.copy(stage = stage)
+        _ui.update { it.copy(stage = stage) }
     }
 
     // ── Connection ─────────────────────────────────────────────────────────
@@ -311,7 +310,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     fun connect() {
         userWantsConnection = true
         authAttempts = 0
-        _ui.value = _ui.value.copy(errorMessage = null, retryAttempt = 0)
+        _ui.update { it.copy(errorMessage = null, retryAttempt = 0) }
         com.example.northstar.data.RideDiagnostics.init(getApplication())
         com.example.northstar.data.RideDiagnostics.start("connect")
         com.example.northstar.data.RideDiagnostics.log(
@@ -328,7 +327,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         if (dashConfig.needsDiscovery) {
             wifiManager.findDashSsid(dashConfig.ssidPrefix)?.let { found ->
                 dashConfig.ssid = found
-                _ui.value = _ui.value.copy(ssid = found)
+                _ui.update { it.copy(ssid = found) }
             }
         }
 
@@ -389,10 +388,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ── Dash WiFi config (Settings) ──────────────────────────────────────────
-    fun setSsid(s: String) { dashConfig.ssid = s.trim(); _ui.value = _ui.value.copy(ssid = s.trim()) }
-    fun setWifiPassword(p: String) { dashConfig.password = p; _ui.value = _ui.value.copy(wifiPassword = p) }
+    fun setSsid(s: String) { dashConfig.ssid = s.trim(); _ui.update { it.copy(ssid = s.trim()) } }
+    fun setWifiPassword(p: String) { dashConfig.password = p; _ui.update { it.copy(wifiPassword = p) } }
     /** Forget the paired dash so the next connect rediscovers any RE_* dash by prefix. */
-    fun forgetDash() { dashConfig.forgetDash(); _ui.value = _ui.value.copy(ssid = "") }
+    fun forgetDash() { dashConfig.forgetDash(); _ui.update { it.copy(ssid = "") } }
 
     // ── Destination + routing ───────────────────────────────────────────────
 
@@ -402,11 +401,11 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setDestination(name: String, lat: Double?, lng: Double?) {
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             destinationName = name, hasRoute = false,
             destLatLng = if (lat != null && lng != null) lat to lng else null,
             routePoints = emptyList(),
-        )
+        ) }
         destLat = lat
         destLng = lng
         route = null
@@ -432,7 +431,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         smoothEtaSec = 0.0; etaArrivalMs = 0L; displayedEtaMin = null
         voice.resetTrip()
         lastSignature = ""   // force a redraw with no route line
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             destinationName = null,
             hasRoute = false,
             destLatLng = null,
@@ -442,7 +441,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             maneuver = null,
             offRoute = false,
             followMode = true,
-        )
+        ) }
         session.updateRouteCard("Northstar")   // dash card → name + 0.0 km, nav off
     }
 
@@ -458,7 +457,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             if (r != null) {
                 route = r
                 tiles.prefetchRoute(r.geometry)
-                _ui.value = _ui.value.copy(hasRoute = true, routePoints = r.geometry)
+                _ui.update { it.copy(hasRoute = true, routePoints = r.geometry) }
                 android.util.Log.i("DashViewModel", "Route ready: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m")
             } else {
                 android.util.Log.w("DashViewModel", "Router returned null")
@@ -474,7 +473,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         val clamped = z.coerceIn(11, 20)
         if (clamped == zoom) return
         zoom = clamped
-        _ui.value = _ui.value.copy(mapZoom = zoom)
+        _ui.update { it.copy(mapZoom = zoom) }
         // Make zoom feel instant: force a redraw on the very next tick (the renderer bridges the
         // gap with scaled neighbouring-zoom tiles) and hold full frame-rate briefly so the change
         // lands within one ~15 fps frame even when stopped (idle would otherwise run at 8 fps).
@@ -486,18 +485,18 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     fun panBy(dx: Float, dy: Float) = manualPan(dx, dy)
     fun recenter() {
         panX = 0f; panY = 0f; followMode = true
-        _ui.value = _ui.value.copy(followMode = true)
+        _ui.update { it.copy(followMode = true) }
     }
     fun toggleHeadingUp() {
         headingUp = !headingUp
-        _ui.value = _ui.value.copy(headingUp = headingUp)
+        _ui.update { it.copy(headingUp = headingUp) }
     }
 
     private fun manualPan(dx: Float, dy: Float) {
         panX += dx; panY += dy
         followMode = false
         lastManualPanAt = System.currentTimeMillis()
-        _ui.value = _ui.value.copy(followMode = false)
+        _ui.update { it.copy(followMode = false) }
     }
 
     // ── Video + nav loop ────────────────────────────────────────────────────
@@ -581,7 +580,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // Revert to follow mode after the rider stops nudging the joystick.
         if (!followMode && System.currentTimeMillis() - lastManualPanAt > MANUAL_IDLE_MS) {
             panX = 0f; panY = 0f; followMode = true
-            _ui.value = _ui.value.copy(followMode = true)
+            _ui.update { it.copy(followMode = true) }
         }
 
         val loc = location.location.value
@@ -646,16 +645,16 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         maybeReroute(offRoute, loc)
 
         // Publish nav figures to the phone UI.
-        _ui.value = _ui.value.copy(
+        _ui.update { it.copy(
             hasGps = loc != null,
             riderLat = matchedLat,
             riderLng = matchedLng,
             riderBearing = heading,
-            remainingKm = remainingM?.let { it / 1000.0 },
+            remainingKm = remainingM?.let { d -> d / 1000.0 },
             etaMinutes = if (etaSec != null) displayedEtaMin else null,
             maneuver = null,
             offRoute = offRoute,
-        )
+        ) }
 
         updateThermal()
 
@@ -787,7 +786,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 progressM = 0.0
                 offRouteSince = 0L
                 tiles.prefetchRoute(r.geometry)
-                _ui.value = _ui.value.copy(hasRoute = true, routePoints = r.geometry)
+                _ui.update { it.copy(hasRoute = true, routePoints = r.geometry) }
                 android.util.Log.i("DashViewModel", "Reroute ok: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m")
                 com.example.northstar.data.RideDiagnostics.log("reroute", "new route in ${took}ms (${r.geometry.size} pts, ${r.totalMeters.toInt()} m)")
             } else {
@@ -900,7 +899,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             PowerManager.THERMAL_STATUS_SEVERE, PowerManager.THERMAL_STATUS_CRITICAL -> "Hot"
             else -> "Throttling"
         }
-        if (label != _ui.value.thermal) _ui.value = _ui.value.copy(thermal = label)
+        if (label != _ui.value.thermal) _ui.update { it.copy(thermal = label) }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -64,6 +64,13 @@ fun AppNavigation(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+
+    // Skip the login screen on every cold start once the rider has passed it (signed in OR chose
+    // "continue locally"); cleared on sign-out so it returns. Remembered once, read here.
+    val startDest = remember {
+        if (com.example.northstar.data.AuthPrefs.isOnboarded(ctx)) Screen.Home.route else Screen.Login.route
+    }
 
     val showBottomNav = currentRoute in listOf(
         Screen.Home.route, Screen.Route.route, Screen.Dash.route,
@@ -102,17 +109,19 @@ fun AppNavigation(
         Box(Modifier.weight(1f)) {
             NavHost(
                 navController = navController,
-                startDestination = Screen.Login.route,
+                startDestination = startDest,
             ) {
                 composable(Screen.Login.route) {
                     LoginScreen(
                         authViewModel = authViewModel,
                         onSignedIn = {
+                            com.example.northstar.data.AuthPrefs.setOnboarded(ctx, true)
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.Login.route) { inclusive = true }
                             }
                         },
                         onSkip = {
+                            com.example.northstar.data.AuthPrefs.setOnboarded(ctx, true)
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.Login.route) { inclusive = true }
                             }
@@ -176,6 +185,7 @@ fun AppNavigation(
                         onConnChange = { appViewModel.setConn(it) },
                         authViewModel = authViewModel,
                         onSignedOut = {
+                            com.example.northstar.data.AuthPrefs.setOnboarded(ctx, false)
                             navController.navigate(Screen.Login.route) {
                                 popUpTo(0) { inclusive = true }
                             }

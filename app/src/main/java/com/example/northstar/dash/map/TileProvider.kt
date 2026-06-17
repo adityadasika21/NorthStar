@@ -188,10 +188,22 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
             conn.setRequestProperty("User-Agent", USER_AGENT)
             conn.connectTimeout = 8_000
             conn.readTimeout = 8_000
+            if (conn.responseCode !in 200..299) {
+                Log.w(TAG, "Tile $key HTTP ${conn.responseCode}")
+                conn.disconnect(); return null
+            }
             val bytes = conn.inputStream.use { it.readBytes() }
             conn.disconnect()
+            // Only cache a tile that actually DECODES. Writing a throttle/error body or a
+            // truncated read to disk would poison the cache: the file would then exist (so
+            // prefetch skips it) but never decode, leaving a permanently blank tile offline.
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bmp == null) {
+                Log.w(TAG, "Tile $key decoded null (${bytes.size}B) — not caching")
+                return null
+            }
             diskFile(key).writeBytes(bytes)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            bmp
         } catch (e: Exception) {
             Log.w(TAG, "Tile $key fetch failed: ${e.message}")
             null

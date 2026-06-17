@@ -35,7 +35,11 @@ android {
 
     defaultConfig {
         applicationId = "com.northstar.app"
-        minSdk = 24
+        // API 29 (Android 10) is the real floor: the dash link is built on WifiNetworkSpecifier
+        // + ConnectivityManager.requestNetwork(specifier), both added in API 29, and that IS the
+        // app. Below 29 the core feature can't run and the unguarded calls would crash, so we
+        // don't pretend to support it. Also makes the API-26 notification paths always safe.
+        minSdk = 29
         targetSdk = 36
         versionCode = 3
         versionName = "1.2"

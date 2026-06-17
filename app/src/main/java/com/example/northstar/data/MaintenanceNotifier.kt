@@ -1,5 +1,6 @@
 package com.example.northstar.data
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -37,6 +38,9 @@ object MaintenanceNotifier {
         return kmDue || moDue
     }
 
+    // notify() is guarded by areNotificationsEnabled() (reflects the POST_NOTIFICATIONS grant
+    // on 33+) and wrapped in runCatching — lint can't see those, so suppress the false positive.
+    @SuppressLint("MissingPermission")
     fun check(context: Context, items: List<MaintenanceItem>, odometer: Int) {
         val ctx = context.applicationContext
         val due = items.filter { isDue(it, odometer) }
@@ -111,6 +115,7 @@ object MaintenanceNotifier {
     private const val DAY_MS = 86_400_000L
 
     /** Notify when an expiry-bearing document (insurance/PUC/licence/RSA) is within 14 days of — or past — expiry. */
+    @SuppressLint("MissingPermission")  // see check(): notify() is guarded + runCatching-wrapped
     fun checkDocuments(context: Context, docs: List<com.example.northstar.data.VehicleDocument>) {
         val ctx = context.applicationContext
         val now = System.currentTimeMillis()

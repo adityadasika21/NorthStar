@@ -29,6 +29,7 @@ import com.example.opendash.dash.video.DashEncoder
 import com.example.opendash.dash.video.DashIdleRenderer
 import com.example.opendash.dash.video.NalProcessor
 import com.example.opendash.dash.video.RtpPacketizer
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -150,6 +151,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var frameBitmap: Bitmap? = null
     private var lastSignature = ""
     private var lastRedrawAt = 0L
+    @Volatile private var wallpaperFrameRevision = 0
 
     companion object {
         private const val MANUAL_IDLE_MS = 8_000L
@@ -387,7 +389,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 wallpaperStore.saveFromUri(uri, horizontalBias, verticalBias, fit)
                 wallpaperStore.currentInfo()
             }.onSuccess { info ->
-                    lastSignature = ""
+                    invalidateWallpaperFrame()
                     publishWallpaper(info, saving = false, error = null)
                 }
                 .onFailure { err ->
@@ -410,7 +412,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 wallpaperStore.saveManyFromUris(uris)
                 wallpaperStore.currentInfo()
             }.onSuccess { info ->
-                lastSignature = ""
+                invalidateWallpaperFrame()
                 publishWallpaper(info, saving = false, error = null)
             }.onFailure { err ->
                 val msg = err.message ?: "Unable to save wallpapers"
@@ -425,10 +427,36 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun updateCurrentWallpaperOptions(
+        horizontalBias: Float,
+        verticalBias: Float,
+        fit: DashWallpaperFit,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _ui.update { it.copy(wallpaperSaving = true, wallpaperError = null) }
+            runCatching {
+                wallpaperStore.updateCurrentOptions(horizontalBias, verticalBias, fit)
+                    ?: error("No wallpaper selected")
+            }.onSuccess { info ->
+                invalidateWallpaperFrame()
+                publishWallpaper(info, saving = false, error = null)
+            }.onFailure { err ->
+                val msg = err.message ?: "Unable to update wallpaper"
+                _ui.update {
+                    it.copy(
+                        wallpaperSaving = false,
+                        wallpaperError = msg,
+                        errorMessage = msg,
+                    )
+                }
+            }
+        }
+    }
+
     fun clearWallpaper() {
         viewModelScope.launch(Dispatchers.IO) {
             val next = wallpaperStore.clearCurrent()
-            lastSignature = ""
+            invalidateWallpaperFrame()
             publishWallpaper(next, saving = false, error = null)
         }
     }
@@ -439,8 +467,15 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun cycleWallpaper(delta: Int) {
         val next = wallpaperStore.cycle(delta)
-        lastSignature = ""
+        invalidateWallpaperFrame()
         publishWallpaper(next)
+    }
+
+    private fun invalidateWallpaperFrame() {
+        wallpaperFrameRevision++
+        lastSignature = ""
+        lastRedrawAt = 0L
+        camMoving = true
     }
 
     private fun publishWallpaper(
@@ -531,7 +566,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private fun fetchRoute(destLatV: Double, destLngV: Double) {
         val loc = location.lastKnown()
         if (loc == null) {
-            android.util.Log.w("DashViewModel", "fetchRoute: no origin location yet")
+            DebugLog.w("DashViewModel") { "fetchRoute: no origin location yet" }
             return
         }
         viewModelScope.launch {
@@ -540,9 +575,9 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 route = r
                 tiles.prefetchRoute(r.geometry)
                 _ui.value = _ui.value.copy(hasRoute = true, routePoints = r.geometry)
-                android.util.Log.i("DashViewModel", "Route ready: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m")
+                DebugLog.i("DashViewModel") { "Route ready: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m" }
             } else {
-                android.util.Log.w("DashViewModel", "Router returned null")
+                DebugLog.w("DashViewModel") { "Router returned null" }
             }
         }
     }
@@ -618,14 +653,14 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                     throw e
                 } catch (e: Exception) {
                     failures++
-                    android.util.Log.e("DashViewModel", "Frame loop error #$failures", e)
+                    DebugLog.e("DashViewModel", { "Frame loop error #$failures" }, e)
                     if (failures >= 3) {
                         // MediaCodec is in an error state — rebuild the encoder so the
                         // stream recovers. The fresh encoder re-emits SPS/PPS, which the
                         // NAL processor bundles into the next IDR for the dash decoder.
                         runCatching { encoder?.release() }
                         encoder = runCatching { DashEncoder(onEncoded).also { it.prepare() } }
-                            .onFailure { android.util.Log.e("DashViewModel", "Encoder rebuild failed", it) }
+                            .onFailure { DebugLog.e("DashViewModel", { "Encoder rebuild failed" }, it) }
                             .getOrNull()
                         lastSignature = "" // force a full redraw on the next tick
                         failures = 0
@@ -769,7 +804,17 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         val camHeading = if (haveTarget) camHdg else heading
 
         val sig = buildString {
-            append(if (r == null && dLat == null && dLng == null) "idle:${_ui.value.wallpaperPath}" else "nav")
+            if (r == null && dLat == null && dLng == null) {
+                append("idle:${_ui.value.wallpaperPath}")
+                append(_ui.value.wallpaperKind)
+                append(_ui.value.wallpaperFit)
+                append(_ui.value.wallpaperCropX)
+                append(_ui.value.wallpaperCropY)
+                append(_ui.value.wallpaperGalleryIndex)
+                append(wallpaperFrameRevision)
+            } else {
+                append("nav")
+            }
             // High resolution (6 dp ≈ 0.1 m, 0.1° heading) so every smoothed step redraws
             // for buttery motion. Safe from standstill jitter because the camera is fed the
             // SMOOTHED position (which settles and stops), not raw GPS.
@@ -800,7 +845,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         if (now - offRouteSince < 4_000 || now - lastRerouteAt < 12_000 || rerouting) return
         lastRerouteAt = now
         rerouting = true
-        android.util.Log.i("DashViewModel", "Off-route ${(now - offRouteSince) / 1000}s → rerouting")
+        DebugLog.i("DashViewModel") { "Off-route ${(now - offRouteSince) / 1000}s → rerouting" }
         viewModelScope.launch {
             val r = Router.route(GeoPoint(loc.latitude, loc.longitude), GeoPoint(dLat, dLng))
             if (r != null) {
@@ -809,9 +854,9 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 offRouteSince = 0L
                 tiles.prefetchRoute(r.geometry)
                 _ui.value = _ui.value.copy(hasRoute = true, routePoints = r.geometry)
-                android.util.Log.i("DashViewModel", "Reroute ok: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m")
+                DebugLog.i("DashViewModel") { "Reroute ok: ${r.geometry.size} pts, ${r.totalMeters.toInt()} m" }
             } else {
-                android.util.Log.w("DashViewModel", "Reroute failed (no internet?)")
+                DebugLog.w("DashViewModel") { "Reroute failed (no internet?)" }
             }
             rerouting = false
         }

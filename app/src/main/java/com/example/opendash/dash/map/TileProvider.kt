@@ -6,9 +6,9 @@ import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.util.Log
 import android.util.LruCache
 import com.example.opendash.dash.nav.GeoPoint
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,7 +94,7 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
                 }
                 if (count > MAX_PREFETCH_TILES) break
             }
-            Log.i(TAG, "Prefetch (point) done — ~$count tiles ensured")
+            DebugLog.i(TAG) { "Prefetch (point) done — ~$count tiles ensured" }
         }
     }
 
@@ -124,7 +124,7 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
                 }
                 if (count > MAX_PREFETCH_TILES) break
             }
-            Log.i(TAG, "Prefetch (route) done — ~$count tiles ensured")
+            DebugLog.i(TAG) { "Prefetch (route) done — ~$count tiles ensured" }
         }
     }
 
@@ -174,7 +174,7 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
             diskFile(key).writeBytes(bytes)
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         } catch (e: Exception) {
-            Log.w(TAG, "Tile $key fetch failed: ${e.message}")
+            DebugLog.w(TAG) { "Tile $key fetch failed: ${e.message}" }
             null
         }
     }

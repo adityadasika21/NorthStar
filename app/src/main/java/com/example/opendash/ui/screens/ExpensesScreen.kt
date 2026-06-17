@@ -74,6 +74,7 @@ fun ExpensesScreen(vm: GarageViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf("All Expenses") }
     var showAdd by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
     val categories = listOf("All Expenses", "Fuel", "Repairs", "Accessories", "Riding Gear", "Food", "Stay", "Transport", "Others")
     val shown = if (selected == "All Expenses") ui.expenses else ui.expenses.filter { it.category == selected }
     val total = shown.sumOf { it.amount }
@@ -94,10 +95,14 @@ fun ExpensesScreen(vm: GarageViewModel = viewModel()) {
                         Text("Total", color = TextLo, fontSize = 12.sp)
                         Text("₹${"%,.0f".format(total)}", color = Gold, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistMonoFamily)
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OpenDashBtn("Excel", onClick = { scope.launch { shareExpenseFile(ctx, vm.exportExpensesCsv(), "text/csv") } }, variant = BtnVariant.Ghost, size = BtnSize.Sm, enabled = ui.expenses.isNotEmpty())
-                        OpenDashBtn("Doc", onClick = { scope.launch { shareExpenseFile(ctx, vm.exportExpensesDoc(), "application/msword") } }, variant = BtnVariant.Ghost, size = BtnSize.Sm, enabled = ui.expenses.isNotEmpty())
-                    }
+                    OpenDashBtn(
+                        "Share",
+                        onClick = { showShare = true },
+                        icon = OpenDashIcons.Share,
+                        variant = BtnVariant.Ghost,
+                        size = BtnSize.Sm,
+                        enabled = ui.expenses.isNotEmpty(),
+                    )
                 }
             }
 
@@ -147,6 +152,17 @@ fun ExpensesScreen(vm: GarageViewModel = viewModel()) {
         onAdd = { category, amount, note -> vm.addExpense(category, amount, note); showAdd = false },
         onDismiss = { showAdd = false },
     )
+    if (showShare) ExpenseExportSheet(
+        onDismiss = { showShare = false },
+        onExcel = {
+            showShare = false
+            scope.launch { shareExpenseFile(ctx, vm.exportExpensesCsv(), "text/csv") }
+        },
+        onDoc = {
+            showShare = false
+            scope.launch { shareExpenseFile(ctx, vm.exportExpensesDoc(), "application/msword") }
+        },
+    )
 }
 
 @Composable
@@ -187,16 +203,50 @@ private fun ExpenseListRow(expense: Expense, onDelete: () -> Unit) {
 private fun AddExpenseScreenDialog(onAdd: (String, Double, String) -> Unit, onDismiss: () -> Unit) {
     val categories = listOf("Fuel", "Repairs", "Accessories", "Riding Gear", "Food", "Stay", "Transport", "Others")
     var category by remember { mutableStateOf(categories.first()) }
+    var date by remember { mutableStateOf(dfExpense.format(Date())) }
+    var time by remember { mutableStateOf(dfExpenseTime.format(Date())) }
     var amount by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
+    var vehicle by remember { mutableStateOf("Himalayan 450") }
+    var odometer by remember { mutableStateOf("") }
+    var fuelQty by remember { mutableStateOf("") }
+    var fullTank by remember { mutableStateOf(false) }
+    var storeName by remember { mutableStateOf("") }
+    var details by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var partsReplaced by remember { mutableStateOf(category != "Repairs") }
     val valid = amount.toDoubleOrNull()?.let { it > 0.0 } == true
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(enabled = valid, onClick = { onAdd(category, amount.toDouble(), note.trim()) }) { Text("Add", color = if (valid) Gold else TextLo) } },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onAdd(
+                        category,
+                        amount.toDouble(),
+                        buildExpenseNote(
+                            category = category,
+                            date = date,
+                            time = time,
+                            vehicle = vehicle,
+                            odometer = odometer,
+                            fuelQty = fuelQty,
+                            fullTank = fullTank,
+                            storeName = storeName,
+                            details = details,
+                            description = description,
+                            partsReplaced = partsReplaced,
+                        ),
+                    )
+                },
+            ) {
+                Text("Add", color = if (valid) Gold else TextLo)
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = TextMid) } },
-        title = { Text("Add expense", color = TextHi) },
+        title = { Text("${category} expense", color = TextHi) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     categories.chunked(2).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -213,14 +263,131 @@ private fun AddExpenseScreenDialog(onAdd: (String, Double, String) -> Unit, onDi
                         }
                     }
                 }
-                OutlinedTextField(amount, { amount = it }, label = { Text("Amount (₹)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
-                OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    ExpenseField(date, { date = it }, "Date", Modifier.weight(1f))
+                    ExpenseField(time, { time = it }, "Time", Modifier.weight(1f))
+                }
+
+                if (category == "Fuel") {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
+                        OpenDashBtn(
+                            if (fullTank) "Full tank" else "Partial tank",
+                            onClick = { fullTank = !fullTank },
+                            icon = OpenDashIcons.Check,
+                            variant = if (fullTank) BtnVariant.Primary else BtnVariant.Secondary,
+                            size = BtnSize.Sm,
+                        )
+                    }
+                    ExpenseField(vehicle, { vehicle = it }, "Motorcycle")
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        ExpenseField(odometer, { odometer = it }, "Odometer (km)", Modifier.weight(1f), KeyboardType.Number)
+                        ExpenseField(fuelQty, { fuelQty = it }, "Fuel quantity", Modifier.weight(1f), KeyboardType.Decimal)
+                    }
+                    ExpenseField(storeName, { storeName = it }, "Fuel station name (optional)")
+                } else {
+                    val storeLabel = when (category) {
+                        "Repairs", "Accessories", "Riding Gear" -> "Store name (optional)"
+                        else -> "Shop / establishment name (optional)"
+                    }
+                    if (category == "Repairs") {
+                        Text("Did you replace any parts?", color = TextHi, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            OpenDashBtn("Yes", onClick = { partsReplaced = true }, icon = OpenDashIcons.Check, variant = if (partsReplaced) BtnVariant.Primary else BtnVariant.Secondary, size = BtnSize.Sm, modifier = Modifier.weight(1f))
+                            OpenDashBtn("No", onClick = { partsReplaced = false }, icon = OpenDashIcons.Check, variant = if (!partsReplaced) BtnVariant.Primary else BtnVariant.Secondary, size = BtnSize.Sm, modifier = Modifier.weight(1f))
+                        }
+                    }
+                    ExpenseField(storeName, { storeName = it }, storeLabel)
+                    when (category) {
+                        "Repairs" -> ExpenseField(details, { details = it }, "Parts replaced (optional)")
+                        "Accessories" -> ExpenseField(details, { details = it }, "Accessories (optional)")
+                        "Riding Gear" -> ExpenseField(details, { details = it }, "Riding gear (optional)")
+                    }
+                }
+
+                ExpenseField(amount, { amount = it }, "Amount (₹)", keyboardType = KeyboardType.Decimal)
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it.take(500) },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    minLines = 2,
+                )
+                Text("${description.length}/500", color = TextLo, fontSize = 11.sp, modifier = Modifier.align(Alignment.End).padding(top = 2.dp))
+                OpenDashBtn(
+                    "Attach bill",
+                    onClick = { },
+                    icon = OpenDashIcons.Plus,
+                    variant = BtnVariant.Ghost,
+                    size = BtnSize.Sm,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
             }
         },
     )
 }
 
 private val dfExpense = SimpleDateFormat("d-MMM-yyyy", Locale.getDefault())
+private val dfExpenseTime = SimpleDateFormat("hh:mm a", Locale.getDefault())
+
+@Composable
+private fun ExpenseExportSheet(onDismiss: () -> Unit, onExcel: () -> Unit, onDoc: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export expenses", color = TextHi) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                OpenDashBtn("Excel / CSV", onClick = onExcel, icon = OpenDashIcons.Chart, variant = BtnVariant.Secondary, size = BtnSize.Md, modifier = Modifier.fillMaxWidth())
+                OpenDashBtn("Document", onClick = onDoc, icon = OpenDashIcons.Share, variant = BtnVariant.Secondary, size = BtnSize.Md, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = TextMid) } },
+    )
+}
+
+@Composable
+private fun ExpenseField(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    keyboardType: KeyboardType = KeyboardType.Text,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        modifier = modifier.padding(top = 8.dp),
+    )
+}
+
+private fun buildExpenseNote(
+    category: String,
+    date: String,
+    time: String,
+    vehicle: String,
+    odometer: String,
+    fuelQty: String,
+    fullTank: Boolean,
+    storeName: String,
+    details: String,
+    description: String,
+    partsReplaced: Boolean,
+): String = buildList {
+    add("$date $time")
+    if (category == "Fuel") {
+        if (vehicle.isNotBlank()) add("Vehicle: ${vehicle.trim()}")
+        if (odometer.isNotBlank()) add("Odometer: ${odometer.trim()} km")
+        if (fuelQty.isNotBlank()) add("Fuel: ${fuelQty.trim()} L")
+        add(if (fullTank) "Full tank" else "Partial tank")
+    }
+    if (category == "Repairs") add(if (partsReplaced) "Parts replaced" else "No parts replaced")
+    if (storeName.isNotBlank()) add("Store: ${storeName.trim()}")
+    if (details.isNotBlank()) add(details.trim())
+    if (description.isNotBlank()) add(description.trim())
+}.joinToString(" · ")
 
 private fun categoryColor(category: String): Color = when (category) {
     "Fuel" -> Gold

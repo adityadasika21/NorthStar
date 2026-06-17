@@ -1,8 +1,8 @@
 package com.example.opendash.dash
 
-import android.util.Log
 import com.example.opendash.dash.protocol.DashCommands
 import com.example.opendash.dash.protocol.K1GPacket
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -95,7 +95,7 @@ class DashSession(private val scope: CoroutineScope) {
 
     fun connect(ssid: String, network: android.net.Network? = null) {
         if (_state.value != DashState.IDLE && _state.value != DashState.ERROR) return
-        Log.i(TAG, "connect() — ssid='$ssid' network=$network")
+        DebugLog.i(TAG) { "connect() — ssid='$ssid' network=$network" }
         sessionJob = scope.launch(Dispatchers.IO) { runSession(ssid, network) }
     }
 
@@ -146,7 +146,7 @@ class DashSession(private val scope: CoroutineScope) {
         }
         socket = null
         _state.value = DashState.IDLE
-        Log.i(TAG, "Disconnected")
+        DebugLog.i(TAG) { "Disconnected" }
     }
 
     // ── Internal ──────────────────────────────────────────────────────────
@@ -171,13 +171,13 @@ class DashSession(private val scope: CoroutineScope) {
             launchStatusHeartbeat(sock)
 
             _state.value = DashState.AUTHENTICATING
-            Log.i(TAG, "Sending initial burst…")
+            DebugLog.i(TAG) { "Sending initial burst…" }
             for (pkt in DashCommands.initialBurst(HOSTNAME)) {
                 sock.send(pkt)
                 delay(BURST_PAUSE)
             }
 
-            Log.i(TAG, "Waiting up to ${AUTH_TIMEOUT}ms for auth (07 01 01)…")
+            DebugLog.i(TAG) { "Waiting up to ${AUTH_TIMEOUT}ms for auth (07 01 01)…" }
             val deadline = System.currentTimeMillis() + AUTH_TIMEOUT
             while (!authConfirmed && System.currentTimeMillis() < deadline) delay(100)
 
@@ -185,14 +185,14 @@ class DashSession(private val scope: CoroutineScope) {
                 fail("Auth timed out — no 07 01 01 from dash. Check SSID matches '$ssid'.")
                 return
             }
-            Log.i(TAG, "Authenticated ✓")
+            DebugLog.i(TAG) { "Authenticated ✓" }
 
             if (navChromeEnabled) enterNavMode(sock) else enterIdleProjectionMode(sock)
             _state.value = DashState.READY
-            Log.i(TAG, "READY ✓")
+            DebugLog.i(TAG) { "READY ✓" }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Session error", e)
+            DebugLog.e(TAG, { "Session error" }, e)
             fail("${e.javaClass.simpleName}: ${e.message}")
         }
     }
@@ -214,7 +214,7 @@ class DashSession(private val scope: CoroutineScope) {
         sock.send(DashCommands.navPlaceholder()); delay(10)
         sock.send(DashCommands.navStart()); delay(40)                 // z2, ONCE
         sock.send(DashCommands.routeCard(destinationName, projectionOn = true))
-        Log.i(TAG, "Nav mode kick sent")
+        DebugLog.i(TAG) { "Nav mode kick sent" }
     }
 
     /**
@@ -224,7 +224,7 @@ class DashSession(private val scope: CoroutineScope) {
     private suspend fun enterIdleProjectionMode(sock: DashSocket) {
         sock.send(DashCommands.projectionFrame()); delay(60)
         sock.send(DashCommands.projectionOn()); delay(40)
-        Log.i(TAG, "Idle projection kick sent")
+        DebugLog.i(TAG) { "Idle projection kick sent" }
     }
 
     private fun launchReceiveLoop(sock: DashSocket) {
@@ -237,7 +237,7 @@ class DashSession(private val scope: CoroutineScope) {
                 } catch (e: Exception) {
                     // Link dropped (EBADF/ENETUNREACH) — end the loop cleanly instead of
                     // crashing the app; DashWifiManager handles reconnect.
-                    Log.w(TAG, "RX loop stopped — socket error: ${e.message}")
+                    DebugLog.w(TAG) { "RX loop stopped — socket error: ${e.message}" }
                     onError?.invoke("Lost connection to dash")
                     break
                 } ?: continue
@@ -256,19 +256,19 @@ class DashSession(private val scope: CoroutineScope) {
             it.type == 0x09 && (it.sub == 0x06 || it.sub == 0x04) &&
                 it.value.firstOrNull()?.toInt() == 0x55
         }
-        if (!onlyAcks) Log.i(TAG, "RX RAW (${pkt.size}B): ${pkt.toHexFull()}")
+        if (!onlyAcks) DebugLog.i(TAG) { "RX RAW (${pkt.size}B): ${pkt.toHexFull()}" }
         for (tlv in tlvs) {
             // ── Auth (07 xx) ──
             if (tlv.type == 0x07) {
                 when (val ev = auth?.ingest(tlv)) {
                     is AuthEvent.SendKey -> {
-                        Log.i(TAG, "Got RSA pubkey — sending q3c.d")
+                        DebugLog.i(TAG) { "Got RSA pubkey — sending q3c.d" }
                         sock.send(ev.packet)
                     }
                     AuthEvent.Confirmed -> { authConfirmed = true }
                     AuthEvent.Rejected -> {
                         authRetries++
-                        Log.w(TAG, "Auth rejected — retry #$authRetries")
+                        DebugLog.w(TAG) { "Auth rejected — retry #$authRetries" }
                         auth?.reset()
                         if (authRetries <= 5) sock.send(DashCommands.authRequest())
                     }
@@ -293,7 +293,7 @@ class DashSession(private val scope: CoroutineScope) {
             // ── 09 00: button / joystick event → echo ack + notify UI ──
             if (tlv.type == 0x09 && tlv.sub == 0x00 && tlv.value.isNotEmpty()) {
                 val btn = tlv.value.last()  // 0900 0001 <code>
-                Log.i(TAG, "JOYSTICK 09 00 → code 0x${(btn.toInt() and 0xFF).toString(16).uppercase()}  full=${tlv.value.toHexFull()}")
+                DebugLog.i(TAG) { "JOYSTICK 09 00 → code 0x${(btn.toInt() and 0xFF).toString(16).uppercase()}  full=${tlv.value.toHexFull()}" }
                 sock.send(DashCommands.buttonAck(btn))
                 scope.launch(Dispatchers.Main) { onButton?.invoke(btn) }
                 continue
@@ -308,21 +308,21 @@ class DashSession(private val scope: CoroutineScope) {
             if (tlv.type == 0x0F) {
                 val key = auth?.sessionKey
                 val plain = key?.let { aesDecryptCbc(tlv.value, it) }
-                Log.i(TAG, "DASH TELEMETRY 0F sub=0x%02X enc(%dB)=%s  dec=%s".format(
+                DebugLog.i(TAG) { "DASH TELEMETRY 0F sub=0x%02X enc(%dB)=%s  dec=%s".format(
                     tlv.sub, tlv.value.size, tlv.value.toHexFull(),
-                    plain?.toHexFull() ?: "<key=${key != null}; decrypt failed>"))
+                    plain?.toHexFull() ?: "<key=${key != null}; decrypt failed>") }
                 continue
             }
             // ── 0C xx: dash → app telemetry (trip/odo/fuel/temp — P1b) ──
             if (tlv.type == 0x0C) {
-                Log.i(TAG, "DASH TELEMETRY 0C sub=0x%02X (%dB) val=%s"
-                    .format(tlv.sub, tlv.value.size, tlv.value.toHexFull()))
+                DebugLog.i(TAG) { "DASH TELEMETRY 0C sub=0x%02X (%dB) val=%s"
+                    .format(tlv.sub, tlv.value.size, tlv.value.toHexFull()) }
                 continue
             }
             // Log every OTHER incoming event (e.g. joystick in nav view, or the dash's
             // 'exit navigation' selection) in FULL so its TLV can be identified + mapped.
-            Log.i(TAG, "DASH EVENT type=0x%02X sub=0x%02X (%dB) val=%s"
-                .format(tlv.type, tlv.sub, tlv.value.size, tlv.value.toHexFull()))
+            DebugLog.i(TAG) { "DASH EVENT type=0x%02X sub=0x%02X (%dB) val=%s"
+                .format(tlv.type, tlv.sub, tlv.value.size, tlv.value.toHexFull()) }
         }
     }
 
@@ -380,7 +380,7 @@ class DashSession(private val scope: CoroutineScope) {
     }
 
     private fun fail(msg: String) {
-        Log.e(TAG, "ERROR — $msg")
+        DebugLog.e(TAG, { "ERROR — $msg" })
         rxJob?.cancel(); heartbeatJob?.cancel()
         socket?.close(); socket = null
         _state.value = DashState.ERROR

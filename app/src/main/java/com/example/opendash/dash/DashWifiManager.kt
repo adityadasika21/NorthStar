@@ -10,7 +10,7 @@ import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.PatternMatcher
-import android.util.Log
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -107,13 +107,13 @@ class DashWifiManager(
         wifi.scanResults
             .mapNotNull { it.SSID?.trim('"')?.takeIf { s -> s.isNotBlank() } }
             .firstOrNull { it.startsWith(prefix) }
-            .also { Log.i(TAG, "Scan lookup for '$prefix*' → ${it ?: "not found"}") }
+            .also { DebugLog.i(TAG) { "Scan lookup for '$prefix*' → ${it ?: "not found"}" } }
     } catch (e: Exception) {
-        Log.w(TAG, "Scan lookup failed: ${e.message}"); null
+        DebugLog.w(TAG) { "Scan lookup failed: ${e.message}" }; null
     }
 
     fun disconnect() {
-        Log.i(TAG, "Disconnect requested")
+        DebugLog.i(TAG) { "Disconnect requested" }
         wantConnected = false
         reconnectJob?.cancel()
         release()
@@ -124,8 +124,10 @@ class DashWifiManager(
 
     private fun requestNetwork() {
         release()
-        Log.i(TAG, "Requesting WiFi: '$pendingSsid' " +
-            "(${if (pendingPrefix) "prefix" else "exact"}, password=${if (pendingPassword.isBlank()) "none" else "set"})")
+        DebugLog.i(TAG) {
+            "Requesting WiFi: '$pendingSsid' " +
+                "(${if (pendingPrefix) "prefix" else "exact"}, password=${if (pendingPassword.isBlank()) "none" else "set"})"
+        }
         _state.value = WifiState(status = WifiConnStatus.REQUESTING, ssid = pendingSsid)
 
         val specBuilder = WifiNetworkSpecifier.Builder()
@@ -145,7 +147,7 @@ class DashWifiManager(
                 // SSID is read in onCapabilitiesChanged (transportInfo isn't populated here
                 // yet on Android 13+). Try once anyway, else fall back to the pending value.
                 val resolved = resolveSsid(network).takeIf { it.isNotBlank() } ?: pendingSsid
-                Log.i(TAG, "WiFi connected ✓  ssid='$resolved' network=$network")
+                DebugLog.i(TAG) { "WiFi connected ✓  ssid='$resolved' network=$network" }
                 if (resolved.isNotBlank() && resolved != pendingSsid) onSsidResolved?.invoke(resolved)
                 _state.value = WifiState(status = WifiConnStatus.CONNECTED, ssid = resolved)
             }
@@ -160,13 +162,13 @@ class DashWifiManager(
                 if (ssid == resolvedSsid) return
                 resolvedSsid = ssid
                 this@DashWifiManager.network = network
-                Log.i(TAG, "Resolved dash SSID: '$ssid'")
+                DebugLog.i(TAG) { "Resolved dash SSID: '$ssid'" }
                 onSsidResolved?.invoke(ssid)
                 _state.value = WifiState(status = WifiConnStatus.CONNECTED, ssid = ssid)
             }
 
             override fun onUnavailable() {
-                Log.w(TAG, "WiFi unavailable — SSID not found or user declined")
+                DebugLog.w(TAG) { "WiFi unavailable — SSID not found or user declined" }
                 this@DashWifiManager.network = null
                 _state.value = WifiState(
                     status = WifiConnStatus.ERROR,
@@ -178,7 +180,7 @@ class DashWifiManager(
             }
 
             override fun onLost(network: Network) {
-                Log.w(TAG, "WiFi link lost — reconnecting in ${RECONNECT_DELAY}ms")
+                DebugLog.w(TAG) { "WiFi link lost — reconnecting in ${RECONNECT_DELAY}ms" }
                 this@DashWifiManager.network = null
                 _state.value = WifiState(
                     status = WifiConnStatus.REQUESTING,
@@ -193,7 +195,7 @@ class DashWifiManager(
         try {
             cm.requestNetwork(request, cb, CONNECT_TIMEOUT)
         } catch (e: Exception) {
-            Log.e(TAG, "requestNetwork threw: ${e.message}", e)
+            DebugLog.e(TAG, { "requestNetwork threw: ${e.message}" }, e)
             _state.value = WifiState(
                 status = WifiConnStatus.ERROR,
                 ssid   = pendingSsid,

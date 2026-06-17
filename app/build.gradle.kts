@@ -24,29 +24,29 @@ android {
         applicationId = "com.opendash.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.2"
+        versionCode = 13
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val releaseStoreFilePath = providers.gradleProperty("OPENDASH_RELEASE_STORE_FILE").orNull
+    val releaseStorePassword = providers.gradleProperty("OPENDASH_RELEASE_STORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.gradleProperty("OPENDASH_RELEASE_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.gradleProperty("OPENDASH_RELEASE_KEY_PASSWORD").orNull
+    val hasReleaseKeystore =
+        !releaseStoreFilePath.isNullOrBlank() &&
+            !releaseStorePassword.isNullOrBlank() &&
+            !releaseKeyAlias.isNullOrBlank() &&
+            !releaseKeyPassword.isNullOrBlank()
+
     signingConfigs {
         create("release") {
-            val storeFilePath = providers.gradleProperty("OPENDASH_RELEASE_STORE_FILE").orNull
-            val storePasswordValue = providers.gradleProperty("OPENDASH_RELEASE_STORE_PASSWORD").orNull
-            val keyAliasValue = providers.gradleProperty("OPENDASH_RELEASE_KEY_ALIAS").orNull
-            val keyPasswordValue = providers.gradleProperty("OPENDASH_RELEASE_KEY_PASSWORD").orNull
-
-            if (
-                !storeFilePath.isNullOrBlank() &&
-                !storePasswordValue.isNullOrBlank() &&
-                !keyAliasValue.isNullOrBlank() &&
-                !keyPasswordValue.isNullOrBlank()
-            ) {
-                storeFile = file(storeFilePath)
-                storePassword = storePasswordValue
-                keyAlias = keyAliasValue
-                keyPassword = keyPasswordValue
+            if (hasReleaseKeystore) {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
     }
@@ -67,7 +67,9 @@ android {
             // should provide their own release keystore through Gradle properties or CI secrets:
             // OPENDASH_RELEASE_STORE_FILE, OPENDASH_RELEASE_STORE_PASSWORD,
             // OPENDASH_RELEASE_KEY_ALIAS, and OPENDASH_RELEASE_KEY_PASSWORD.
-            signingConfig = signingConfigs.getByName("release")
+            // When absent, Gradle produces an unsigned release artifact instead of falling
+            // back to debug signing.
+            if (hasReleaseKeystore) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -75,6 +77,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
         resValues = true
     }

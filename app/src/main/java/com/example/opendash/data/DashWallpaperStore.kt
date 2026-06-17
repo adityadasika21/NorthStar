@@ -78,6 +78,24 @@ class DashWallpaperStore(private val context: Context) {
         return next
     }
 
+    fun updateCurrentOptions(
+        horizontalBias: Float,
+        verticalBias: Float,
+        fit: DashWallpaperFit,
+    ): DashWallpaperInfo? {
+        val current = currentInfo() ?: return null
+        prefs.edit()
+            .putFloat("crop_x_${current.slot}", horizontalBias)
+            .putFloat("crop_y_${current.slot}", verticalBias)
+            .putString("fit_${current.slot}", fit.name)
+            .apply()
+        return current.copy(
+            horizontalBias = horizontalBias,
+            verticalBias = verticalBias,
+            fit = fit,
+        )
+    }
+
     fun clear() {
         File(context.filesDir, DashWallpaperPaths.DIRECTORY).listFiles()?.forEach { it.delete() }
         prefs.edit().clear().apply()

@@ -1,6 +1,7 @@
 package com.example.opendash.ui.screens
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -179,8 +180,14 @@ private fun EditVehicleDialog(
 ) {
     var title by remember(vehicle) { mutableStateOf(vehicle.title) }
     var nickname by remember(vehicle) { mutableStateOf(vehicle.nickname) }
-    var puc by remember(vehicle) { mutableStateOf(vehicle.puc) }
-    var insurance by remember(vehicle) { mutableStateOf(vehicle.insurance) }
+    val initialPuc = remember(vehicle) { vehicle.puc.toVehicleDateParts() }
+    val initialInsurance = remember(vehicle) { vehicle.insurance.toVehicleDateParts() }
+    var pucDay by remember(vehicle) { mutableStateOf(initialPuc.day) }
+    var pucMonth by remember(vehicle) { mutableStateOf(initialPuc.month) }
+    var pucYear by remember(vehicle) { mutableStateOf(initialPuc.year) }
+    var insuranceDay by remember(vehicle) { mutableStateOf(initialInsurance.day) }
+    var insuranceMonth by remember(vehicle) { mutableStateOf(initialInsurance.month) }
+    var insuranceYear by remember(vehicle) { mutableStateOf(initialInsurance.year) }
     var service by remember(vehicle) { mutableStateOf(vehicle.service) }
     val valid = title.isNotBlank()
 
@@ -191,8 +198,24 @@ private fun EditVehicleDialog(
             Column {
                 VehicleTextField(title, { title = it }, "Vehicle name")
                 VehicleTextField(nickname, { nickname = it }, "Nickname")
-                VehicleTextField(puc, { puc = it }, "PUC")
-                VehicleTextField(insurance, { insurance = it }, "Insurance")
+                VehicleDateFields(
+                    label = "PUC expiry",
+                    day = pucDay,
+                    month = pucMonth,
+                    year = pucYear,
+                    onDay = { pucDay = it.filter { ch -> ch.isDigit() }.take(2) },
+                    onMonth = { pucMonth = it.take(3) },
+                    onYear = { pucYear = it.filter { ch -> ch.isDigit() }.take(4) },
+                )
+                VehicleDateFields(
+                    label = "Insurance expiry",
+                    day = insuranceDay,
+                    month = insuranceMonth,
+                    year = insuranceYear,
+                    onDay = { insuranceDay = it.filter { ch -> ch.isDigit() }.take(2) },
+                    onMonth = { insuranceMonth = it.take(3) },
+                    onYear = { insuranceYear = it.filter { ch -> ch.isDigit() }.take(4) },
+                )
                 VehicleTextField(service, { service = it }, "Service")
             }
         },
@@ -204,8 +227,8 @@ private fun EditVehicleDialog(
                         VehicleProfile(
                             title = title.trim(),
                             nickname = nickname.trim(),
-                            puc = puc.trim().ifBlank { "Not set" },
-                            insurance = insurance.trim().ifBlank { "Not set" },
+                            puc = formatVehicleDate(pucDay, pucMonth, pucYear),
+                            insurance = formatVehicleDate(insuranceDay, insuranceMonth, insuranceYear),
                             service = service.trim().ifBlank { "Not set" },
                         ),
                     )
@@ -221,16 +244,61 @@ private fun EditVehicleDialog(
 }
 
 @Composable
-private fun VehicleTextField(value: String, onChange: (String) -> Unit, label: String) {
+private fun VehicleDateFields(
+    label: String,
+    day: String,
+    month: String,
+    year: String,
+    onDay: (String) -> Unit,
+    onMonth: (String) -> Unit,
+    onYear: (String) -> Unit,
+) {
+    Text(label, color = TextMid, fontSize = 12.5.sp, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        VehicleTextField(day, onDay, "DD", Modifier.weight(0.8f), KeyboardType.Number)
+        VehicleTextField(month, onMonth, "MMM", Modifier.weight(1.1f), KeyboardType.Text)
+        VehicleTextField(year, onYear, "YYYY", Modifier.weight(1.1f), KeyboardType.Number)
+    }
+}
+
+@Composable
+private fun VehicleTextField(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    keyboardType: KeyboardType = KeyboardType.Text,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        modifier = modifier.padding(top = 8.dp),
     )
 }
 
 private fun String.isProblemValue(): Boolean =
     equals("expired", ignoreCase = true) || equals("na", ignoreCase = true)
+
+private data class VehicleDateParts(val day: String, val month: String, val year: String)
+
+private val vehicleMonths = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+private fun String.toVehicleDateParts(): VehicleDateParts {
+    val match = Regex("""(\d{1,2})-([A-Za-z]{3})-(\d{4})""").find(this.trim())
+    if (match != null) {
+        val (day, month, year) = match.destructured
+        return VehicleDateParts(day.padStart(2, '0'), month.replaceFirstChar { it.uppercase() }, year)
+    }
+    return VehicleDateParts("01", "Jan", "2030")
+}
+
+private fun formatVehicleDate(day: String, month: String, year: String): String {
+    val cleanDay = day.toIntOrNull()?.coerceIn(1, 31)?.toString()?.padStart(2, '0') ?: "01"
+    val cleanMonth = vehicleMonths.firstOrNull { it.equals(month.trim(), ignoreCase = true) }
+        ?: vehicleMonths.first()
+    val cleanYear = year.toIntOrNull()?.coerceIn(2024, 2099)?.toString() ?: "2030"
+    return "$cleanDay-$cleanMonth-$cleanYear"
+}

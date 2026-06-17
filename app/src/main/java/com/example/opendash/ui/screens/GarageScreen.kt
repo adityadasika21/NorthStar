@@ -64,7 +64,6 @@ fun GarageScreen(
     var showFuel by remember { mutableStateOf(false) }
     var showAddService by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
-    var showOdo by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -73,12 +72,7 @@ fun GarageScreen(
             .padding(18.dp)
             .padding(bottom = 24.dp),
     ) {
-        ScreenHeader(
-            title = "Garage",
-            trailing = {
-                OpenDashBtn("Odometer", onClick = { showOdo = true }, variant = BtnVariant.Ghost, size = BtnSize.Sm)
-            },
-        )
+        ScreenHeader(title = "Garage")
 
         OpenDashCard(modifier = Modifier.fillMaxWidth(), padding = 14.dp) {
             Eyebrow("Active vehicle")
@@ -121,7 +115,6 @@ fun GarageScreen(
         onAddNew = { showLog = false; showAddService = true },
         onDismiss = { showLog = false },
     )
-    if (showOdo) OdometerDialog(ui.odometerKm, onSet = { vm.setOdometer(it); showOdo = false }, onDismiss = { showOdo = false })
 }
 
 @Composable

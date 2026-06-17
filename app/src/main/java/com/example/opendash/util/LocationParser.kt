@@ -1,6 +1,5 @@
 package com.example.opendash.util
 
-import android.util.Log
 import com.example.opendash.data.SharedLocation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -217,11 +216,11 @@ object LocationParser {
         return out.toByteArray()
     }
 
-    private inline fun safeLog(message: () -> String) {
-        runCatching { Log.d(TAG, message()) }
+    private fun safeLog(message: () -> String) {
+        DebugLog.d(TAG, message)
     }
 
     private fun safeWarn(message: String) {
-        runCatching { Log.w(TAG, message) }
+        DebugLog.w(TAG) { message }
     }
 }

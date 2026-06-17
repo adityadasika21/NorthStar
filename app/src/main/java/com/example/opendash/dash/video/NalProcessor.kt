@@ -1,5 +1,7 @@
 package com.example.opendash.dash.video
 
+import com.example.opendash.util.DebugLog
+
 /**
  * Splits Annex-B H.264 output from MediaCodec into individual NAL units,
  * handles the dash-specific IDR bundling requirement, and filters NAL types
@@ -56,15 +58,15 @@ class NalProcessor(private val onNal: (ByteArray, Boolean) -> Unit) {
         val s = sps; val p = pps
         if (!loggedParams && s != null && p != null) {
             loggedParams = true
-            android.util.Log.i(TAG, "SPS=${s.hex()} PPS=${p.hex()}")
+            DebugLog.i(TAG) { "SPS=${s.hex()} PPS=${p.hex()}" }
         }
         if (s == null || p == null) {
-            android.util.Log.w(TAG, "IDR with no SPS/PPS cached — dash will not decode")
+            DebugLog.w(TAG) { "IDR with no SPS/PPS cached — dash will not decode" }
         }
         val nal = if (s != null && p != null) {
             s + START_CODE_4 + p + START_CODE_4 + idr
         } else idr
-        if (++idrCount <= 3) android.util.Log.d(TAG, "emit IDR #$idrCount (${nal.size}B bundled)")
+        if (++idrCount <= 3) DebugLog.d(TAG) { "emit IDR #$idrCount (${nal.size}B bundled)" }
         onNal(nal, true)
     }
 

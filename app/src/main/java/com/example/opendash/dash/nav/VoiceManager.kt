@@ -4,7 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.speech.tts.TextToSpeech
-import android.util.Log
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
@@ -49,7 +49,7 @@ class VoiceManager private constructor(context: Context) {
         tts = TextToSpeech(app) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) tts?.language = Locale.getDefault()
-            else Log.w(TAG, "TextToSpeech init failed: $status")
+            else DebugLog.w(TAG) { "TextToSpeech init failed: $status" }
         }
     }
 
@@ -57,7 +57,7 @@ class VoiceManager private constructor(context: Context) {
         runCatching {
             if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
             tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 180)
-        }.onFailure { Log.w(TAG, "chime failed: ${it.message}") }
+        }.onFailure { DebugLog.w(TAG) { "chime failed: ${it.message}" } }
     }
 
     private fun speak(text: String) {

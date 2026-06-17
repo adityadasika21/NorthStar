@@ -78,24 +78,24 @@ fun SettingsScreen(
     var cropX by remember { mutableFloatStateOf(0f) }
     var cropY by remember { mutableFloatStateOf(0f) }
     var fitMode by remember { mutableStateOf(DashWallpaperFit.CROP) }
-    val wallpaperPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            pendingWallpaperUri = uri
-            cropX = 0f
-            cropY = 0f
-            fitMode = DashWallpaperFit.CROP
-            pendingWallpaperPreview = wallpaperPreviewFromUri(ctx, uri)
-        }
-    }
     val wallpaperMultiPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(DashWallpaperPaths.MAX_SLOTS)
     ) { uris ->
-        if (uris.isNotEmpty()) {
-            pendingWallpaperUri = null
-            pendingWallpaperPreview = null
-            dashViewModel.addWallpapersFromUris(uris)
+        when (uris.size) {
+            0 -> Unit
+            1 -> {
+                val uri = uris.first()
+                pendingWallpaperUri = uri
+                cropX = 0f
+                cropY = 0f
+                fitMode = DashWallpaperFit.CROP
+                pendingWallpaperPreview = wallpaperPreviewFromUri(ctx, uri)
+            }
+            else -> {
+                pendingWallpaperUri = null
+                pendingWallpaperPreview = null
+                dashViewModel.addWallpapersFromUris(uris)
+            }
         }
     }
     val wallpaperPreview = remember(dashUi.wallpaperPath, dashUi.wallpaperKind) {
@@ -220,7 +220,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Text(
                         when {
-                            pendingWallpaperPreview != null -> "Adjust dash crop"
+                            pendingWallpaperPreview != null -> if (pendingWallpaperUri == null) "Edit selected media" else "Adjust dash crop"
                             dashUi.wallpaperSaving -> "Saving wallpaper…"
                             dashUi.wallpaperPath == null -> "Default idle screen"
                             else -> "Gallery ${dashUi.wallpaperGalleryIndex + 1} of ${dashUi.wallpaperGalleryCount}"
@@ -295,9 +295,38 @@ fun SettingsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (pendingWallpaperPreview != null && pendingWallpaperUri != null) {
                     OpenDashBtn(
-                        "Save crop",
+                        if (pendingWallpaperUri == null) "Save edit" else "Save crop",
                         onClick = {
-                            dashViewModel.setWallpaperFromUri(pendingWallpaperUri!!, cropX, cropY, fitMode)
+                            val uri = pendingWallpaperUri
+                            if (uri != null) {
+                                dashViewModel.setWallpaperFromUri(uri, cropX, cropY, fitMode)
+                            } else {
+                                dashViewModel.updateCurrentWallpaperOptions(cropX, cropY, fitMode)
+                            }
+                            pendingWallpaperUri = null
+                            pendingWallpaperPreview = null
+                        },
+                        icon = OpenDashIcons.Check,
+                        variant = BtnVariant.Primary,
+                        size = BtnSize.Sm,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OpenDashBtn(
+                        "Cancel",
+                        onClick = {
+                            pendingWallpaperUri = null
+                            pendingWallpaperPreview = null
+                        },
+                        icon = OpenDashIcons.X,
+                        variant = BtnVariant.Ghost,
+                        size = BtnSize.Sm,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else if (pendingWallpaperPreview != null) {
+                    OpenDashBtn(
+                        "Save edit",
+                        onClick = {
+                            dashViewModel.updateCurrentWallpaperOptions(cropX, cropY, fitMode)
                             pendingWallpaperUri = null
                             pendingWallpaperPreview = null
                         },
@@ -326,26 +355,14 @@ fun SettingsScreen(
                         )
                     }
                     OpenDashBtn(
-                        if (dashUi.wallpaperGalleryCount >= 5) "Replace current" else "Add media",
-                        onClick = {
-                            wallpaperPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                            )
-                        },
-                        icon = OpenDashIcons.Edit,
-                        variant = BtnVariant.Primary,
-                        size = BtnSize.Sm,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OpenDashBtn(
-                        "Add many",
+                        "Add media",
                         onClick = {
                             wallpaperMultiPicker.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                             )
                         },
-                        icon = OpenDashIcons.Edit,
-                        variant = BtnVariant.Ghost,
+                        icon = OpenDashIcons.Plus,
+                        variant = BtnVariant.Primary,
                         size = BtnSize.Sm,
                         modifier = Modifier.weight(1f),
                     )
@@ -357,6 +374,20 @@ fun SettingsScreen(
                         )
                     }
                     if (dashUi.wallpaperPath != null) {
+                        OpenDashBtn(
+                            "Edit current",
+                            onClick = {
+                                pendingWallpaperUri = null
+                                pendingWallpaperPreview = wallpaperPreview
+                                cropX = dashUi.wallpaperCropX
+                                cropY = dashUi.wallpaperCropY
+                                fitMode = dashUi.wallpaperFit
+                            },
+                            icon = OpenDashIcons.Edit,
+                            variant = BtnVariant.Ghost,
+                            size = BtnSize.Sm,
+                            modifier = Modifier.weight(1f),
+                        )
                         OpenDashBtn(
                             "Remove",
                             onClick = { dashViewModel.clearWallpaper() },

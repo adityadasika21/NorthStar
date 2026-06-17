@@ -5,7 +5,6 @@ import android.app.Application
 import android.content.Context
 import android.location.Geocoder
 import android.location.LocationManager
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.opendash.data.SharedLocation
@@ -13,6 +12,7 @@ import com.example.opendash.dash.nav.GeoPoint
 import com.example.opendash.dash.nav.Route
 import com.example.opendash.dash.nav.Router
 import com.example.opendash.util.LocationParser
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -106,7 +106,7 @@ class RouteViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 _state.value = _state.value.copy(destination = resolved, isResolving = false)
                 if (coords != null) computeRoute(coords.first, coords.second)
-                else Log.w(TAG, "No coords for '$name' (url+geocode both empty)")
+                else DebugLog.w(TAG) { "No coords for '$name' (url+geocode both empty)" }
             }
         }
     }
@@ -116,18 +116,18 @@ class RouteViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun geocode(query: String): Pair<Double, Double>? = withContext(Dispatchers.IO) {
         try {
             if (!Geocoder.isPresent()) {
-                Log.w(TAG, "No geocoder backend present")
+                DebugLog.w(TAG) { "No geocoder backend present" }
                 return@withContext null
             }
             val results = Geocoder(getApplication(), Locale.getDefault()).getFromLocationName(query, 1)
             val a = results?.firstOrNull() ?: run {
-                Log.w(TAG, "Geocoder: no result for '$query'")
+                DebugLog.w(TAG) { "Geocoder: no result for '$query'" }
                 return@withContext null
             }
-            Log.i(TAG, "Geocoded '$query' → ${a.latitude},${a.longitude}")
+            DebugLog.i(TAG) { "Geocoded '$query' → ${a.latitude},${a.longitude}" }
             a.latitude to a.longitude
         } catch (e: Exception) {
-            Log.w(TAG, "Geocoder failed: ${e.message}")
+            DebugLog.w(TAG) { "Geocoder failed: ${e.message}" }
             null
         }
     }

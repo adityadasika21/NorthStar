@@ -1,7 +1,7 @@
 package com.example.opendash.dash
 
-import android.util.Log
 import com.example.opendash.dash.protocol.K1GPacket
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
@@ -60,7 +60,7 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
                 network?.bindSocket(it)
             }
             rtp = DatagramSocket().also { network?.bindSocket(it) }
-            Log.i(TAG, "Sockets open — TX :$CTRL_PORT→$BROADCAST:$CTRL_PORT (broadcast), RX :$RX_PORT, RTP→$DASH_IP:$RTP_PORT")
+            DebugLog.i(TAG) { "Sockets open — TX :$CTRL_PORT→$BROADCAST:$CTRL_PORT (broadcast), RX :$RX_PORT, RTP→$DASH_IP:$RTP_PORT" }
             txSocket  = tx
             rxSocket  = rx
             rtpSocket = rtp
@@ -73,13 +73,13 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
     /** Send a K1G control packet (seq patched here, like K1GTx in the reference). */
     fun send(data: ByteArray) {
         val pkt = K1GPacket.patchSeq(data, seq.getAndIncrement())
-        Log.d(TAG, "TX →$BROADCAST:$CTRL_PORT  ${pkt.size}B  ${pkt.hex()}")
+        DebugLog.d(TAG) { "TX →$BROADCAST:$CTRL_PORT  ${pkt.size}B  ${pkt.hex()}" }
         // UDP fire-and-forget: a dropped/unreachable link (ENETUNREACH, EBADF) must never
         // crash the app — the session will fail and reconnect.
         try {
             txSocket.send(DatagramPacket(pkt, pkt.size, broadcastAddr, CTRL_PORT))
         } catch (e: Exception) {
-            Log.w(TAG, "TX send failed (link down?): ${e.message}")
+            DebugLog.w(TAG) { "TX send failed (link down?): ${e.message}" }
         }
     }
 
@@ -87,7 +87,7 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
         try {
             rtpSocket.send(DatagramPacket(data, data.size, dashAddr, RTP_PORT))
         } catch (e: Exception) {
-            Log.d(TAG, "RTP send failed (link down?): ${e.message}")
+            DebugLog.d(TAG) { "RTP send failed (link down?): ${e.message}" }
         }
     }
 
@@ -101,7 +101,7 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
         return@withContext try {
             rxSocket.receive(buf)
             val bytes = buf.data.copyOf(buf.length)
-            Log.d(TAG, "RX ←${buf.address?.hostAddress}:${buf.port}  ${bytes.size}B  ${bytes.hex()}")
+            DebugLog.d(TAG) { "RX ←${buf.address?.hostAddress}:${buf.port}  ${bytes.size}B  ${bytes.hex()}" }
             bytes
         } catch (_: java.net.SocketTimeoutException) {
             null
@@ -109,7 +109,7 @@ class DashSocket(private val network: android.net.Network? = null) : AutoCloseab
     }
 
     override fun close() {
-        Log.d(TAG, "Sockets closed")
+        DebugLog.d(TAG) { "Sockets closed" }
         runCatching { txSocket.close() }
         runCatching { rxSocket.close() }
         runCatching { rtpSocket.close() }

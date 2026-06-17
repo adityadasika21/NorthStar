@@ -6,8 +6,8 @@ import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.os.Build
-import android.util.Log
 import android.view.Surface
+import com.example.opendash.util.DebugLog
 
 /**
  * MediaCodec H.264 encoder for the Tripper Dash stream:
@@ -56,7 +56,7 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
         val name = selectHardwareEncoder(format)
         codec = (if (name != null) MediaCodec.createByCodecName(name)
                  else MediaCodec.createEncoderByType(MIME)).also { c ->
-            Log.i(TAG, "Encoder: ${c.name}")
+            DebugLog.i(TAG) { "Encoder: ${c.name}" }
             c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             inputSurface = c.createInputSurface()
             c.start()

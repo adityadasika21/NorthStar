@@ -1,7 +1,7 @@
 package com.example.opendash.data
 
 import android.content.Context
-import android.util.Log
+import com.example.opendash.util.DebugLog
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentChange
@@ -142,7 +142,7 @@ class SyncRepository private constructor(context: Context) {
     fun startSync() {
         val u = userDoc() ?: return
         stopSync()
-        Log.i(TAG, "startSync for uid=${auth?.currentUser?.uid}")
+        DebugLog.i(TAG) { "startSync for uid=${auth?.currentUser?.uid}" }
 
         listen(u.collection("fuel"),
             uploadLocal = { db.fuelFills().forEach { pushFuel(it) } },

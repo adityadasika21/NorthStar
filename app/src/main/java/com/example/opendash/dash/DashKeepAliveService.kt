@@ -12,9 +12,9 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
 import com.example.opendash.MainActivity
 import com.example.opendash.R
+import com.example.opendash.util.DebugLog
 
 /**
  * Foreground service that keeps OpenDash streaming to the dash while the
@@ -81,7 +81,7 @@ class DashKeepAliveService : Service() {
             startForeground(NOTIF_ID, buildNotification())
         }
         acquireLocks()
-        Log.i(TAG, "Foreground service up — wake+wifi locks held")
+        DebugLog.i(TAG) { "Foreground service up — wake+wifi locks held" }
     }
 
     private fun acquireLocks() {
@@ -112,7 +112,7 @@ class DashKeepAliveService : Service() {
 
     override fun onDestroy() {
         releaseLocks()
-        Log.i(TAG, "Foreground service stopped — locks released")
+        DebugLog.i(TAG) { "Foreground service stopped — locks released" }
         super.onDestroy()
     }
 

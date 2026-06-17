@@ -1,6 +1,6 @@
 package com.example.opendash.dash.nav
 
-import android.util.Log
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -30,7 +30,7 @@ object Router {
             conn.disconnect()
             parse(body)
         } catch (e: Exception) {
-            Log.w(TAG, "route() failed: ${e.message}")
+            DebugLog.w(TAG) { "route() failed: ${e.message}" }
             null
         }
     }
@@ -38,7 +38,7 @@ object Router {
     private fun parse(json: String): Route? {
         val root = JSONObject(json)
         if (root.optString("code") != "Ok") {
-            Log.w(TAG, "OSRM code=${root.optString("code")}")
+            DebugLog.w(TAG) { "OSRM code=${root.optString("code")}" }
             return null
         }
         val routes = root.optJSONArray("routes") ?: return null

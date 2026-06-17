@@ -6,7 +6,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
-import android.util.Log
+import com.example.opendash.util.DebugLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -27,9 +27,9 @@ class LocationTracker(context: Context) {
         val cur = _location.value
         if (acceptFix(cur, loc)) {
             _location.value = loc
-            Log.d(TAG, "fix ${loc.provider} acc=${loc.accuracy} (${loc.latitude},${loc.longitude})")
+            DebugLog.d(TAG) { "fix ${loc.provider} acc=${loc.accuracy} (${loc.latitude},${loc.longitude})" }
         } else {
-            Log.d(TAG, "REJECT ${loc.provider} acc=${loc.accuracy} dt=${loc.time - (cur?.time ?: 0)}ms")
+            DebugLog.d(TAG) { "REJECT ${loc.provider} acc=${loc.accuracy} dt=${loc.time - (cur?.time ?: 0)}ms" }
         }
     }
 
@@ -72,11 +72,11 @@ class LocationTracker(context: Context) {
                 }
             }
             running = true
-            Log.i(TAG, "Location updates started")
+            DebugLog.i(TAG) { "Location updates started" }
         } catch (e: SecurityException) {
-            Log.w(TAG, "Location permission missing — GPS disabled")
+            DebugLog.w(TAG) { "Location permission missing — GPS disabled" }
         } catch (e: Exception) {
-            Log.w(TAG, "GPS start failed: ${e.message}")
+            DebugLog.w(TAG) { "GPS start failed: ${e.message}" }
         }
     }
 

@@ -4,10 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.widget.Toast
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.example.opendash.util.DebugLog
 
 /**
  * Per-rider dash WiFi configuration, persisted on-device.
@@ -59,7 +59,7 @@ class DashConfig private constructor(context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             ).also { migrateLegacyValues(it) }
         }.getOrElse { error ->
-            Log.w(TAG, "Encrypted dash_config unavailable; using fallback prefs (${error.javaClass.simpleName})")
+            DebugLog.w(TAG) { "Encrypted dash_config unavailable; using fallback prefs (${error.javaClass.simpleName})" }
             showEncryptionWarning()
             legacyPrefs
         }

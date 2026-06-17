@@ -13,7 +13,7 @@ if (project.file("google-services.json").exists()) {
 }
 
 android {
-    namespace = "com.example.northstar"
+    namespace = "com.example.opendash"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -21,28 +21,55 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.northstar.app"
+        applicationId = "com.opendash.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 13
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    val releaseStoreFilePath = providers.gradleProperty("OPENDASH_RELEASE_STORE_FILE").orNull
+    val releaseStorePassword = providers.gradleProperty("OPENDASH_RELEASE_STORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.gradleProperty("OPENDASH_RELEASE_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.gradleProperty("OPENDASH_RELEASE_KEY_PASSWORD").orNull
+    val hasReleaseKeystore =
+        !releaseStoreFilePath.isNullOrBlank() &&
+            !releaseStorePassword.isNullOrBlank() &&
+            !releaseKeyAlias.isNullOrBlank() &&
+            !releaseKeyPassword.isNullOrBlank()
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseKeystore) {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".mui3"
-            resValue("string", "app_name", "Northstar M3")
+            resValue("string", "app_name", "OpenDash")
         }
         release {
-            optimization {
-                enable = false
-            }
-            // Hobby/open-source distribution: sign the release with the debug keystore so the
-            // published APK installs by tapping (sideload). Replace with your own release
-            // keystore if you ever ship a signed-by-you build (needed for consistent updates).
-            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            // Release builds must never use the debug signing config. Local developers and CI
+            // should provide their own release keystore through Gradle properties or CI secrets:
+            // OPENDASH_RELEASE_STORE_FILE, OPENDASH_RELEASE_STORE_PASSWORD,
+            // OPENDASH_RELEASE_KEY_ALIAS, and OPENDASH_RELEASE_KEY_PASSWORD.
+            // When absent, Gradle produces an unsigned release artifact instead of falling
+            // back to debug signing.
+            if (hasReleaseKeystore) signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -50,6 +77,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
         resValues = true
     }
@@ -73,6 +101,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
+    implementation(libs.androidx.security.crypto)
     implementation(libs.google.identity.googleid)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.maplibre)

@@ -1,4 +1,4 @@
-    # Northstar
+    # OpenDash
 
 Personal Android companion app for a **Royal Enfield Himalayan 450** motorcycle.
 Single user (just me), Android-only, targeting a **Nothing Phone 3**. Not a
@@ -10,7 +10,7 @@ personas, no client/enterprise concerns.
 Low-power **navigation projected onto the Royal Enfield Tripper Dash** (a small
 **round TFT display**) without cooking the phone. The Royal Enfield app overheats
 the phone because it screen-*projects* — it keeps the OLED lit and mirrors Google
-Maps. Northstar instead **renders the map off-screen and hardware-encodes H.264**, so
+Maps. OpenDash instead **renders the map off-screen and hardware-encodes H.264**, so
 the phone screen can stay **OFF** during the ride. That single architectural
 difference is the whole point of the project.
 
@@ -27,8 +27,8 @@ difference is the whole point of the project.
 
 ## Core user flow
 
-1. I share a destination from **Google Maps** into Northstar.
-2. Northstar previews the route, I tap **Send to Dash**.
+1. I share a destination from **Google Maps** into OpenDash.
+2. OpenDash previews the route, I tap **Send to Dash**.
 3. While riding, the dash shows the map; I use the bike's **physical joystick** to
    pan/zoom. The phone screen stays off.
 

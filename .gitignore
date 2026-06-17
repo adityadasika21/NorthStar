@@ -22,3 +22,8 @@ app/google-services.json
 # Distributable APKs live on GitHub Releases, not in the repo.
 /dist/
 *.apk
+*.aab
+*.jks
+*.keystore
+*.log
+captures/

@@ -1,7 +1,7 @@
-# Northstar — TODO
+# OpenDash — TODO
 
 Full backlog after a complete code read (2026-06-12). Priority order is fixed:
-**Navigation → Power efficiency → Maps↔Northstar↔Dash integration → correctness →
+**Navigation → Power efficiency → Maps↔OpenDash↔Dash integration → correctness →
 persistence/sync → secondary features → Garage (last).** Garage is intentionally
 the lowest priority.
 
@@ -66,7 +66,7 @@ Decision: real Google Maps in the phone app (free native SDK), power-efficient
 Google-Maps-styled map streamed to the dash.
 
 - [x] **In-app Dash view = real Google Maps.** Replaced the decorative `CircularDash`
-  (which drew a fake random polyline) with `NorthstarMap` (maps-compose `GoogleMap`)
+  (which drew a fake random polyline) with `OpenDashMap` (maps-compose `GoogleMap`)
   clipped to the round Tripper shape: blue location dot, follows current location,
   default Google view when no destination, route polyline + marker when navigating.
 - [x] **Streamed dash restyled to Google-Maps look.** `TileProvider` no longer
@@ -74,14 +74,14 @@ Google-Maps-styled map streamed to the dash.
   `MapRenderer` background + standby text adjusted for the light look.
 - [ ] **ADD YOUR MAPS API KEY** to `local.properties` → `MAPS_API_KEY=AIza…`.
   In Google Cloud (same project as Firebase): enable **Maps SDK for Android**,
-  create an API key, restrict to package `com.northstar.app` + SHA-1
+  create an API key, restrict to package `com.opendash.app` + SHA-1
   `80:30:BD:71:…:2D:C8`. Native map display is free/unlimited (billing must be
   enabled on the project but the map view itself is never charged). Until the key
   is set, the in-app map shows blank/gray.
 - [ ] Optional: give the streamed dash a night style (dark map) as a P4 setting —
   light is the Google-Maps default; dark is friendlier at night / on OLED.
 
-## P1 — GOOGLE MAPS ↔ NORTHSTAR ↔ DASH — IMPLEMENTED, needs on-device validation
+## P1 — GOOGLE MAPS ↔ OpenDash ↔ DASH — IMPLEMENTED, needs on-device validation
 
 - [x] **Destination → routing → dash.** `setDestination` fetches the OSRM route,
   prefetches tiles along the polyline, and feeds NavEngine + the dash nav-info loop.
@@ -143,7 +143,7 @@ rooted**. Do not delete this path until that capture is done.
 There is currently **no database and no sync** — every list is static mock data and
 the action buttons are no-ops. CLAUDE.md specifies SQLite source-of-truth + Firebase.
 
-- [x] **Local persistence (SQLite).** `data/NorthstarDb` (hand-rolled
+- [x] **Local persistence (SQLite).** `data/OpenDashDb` (hand-rolled
   `SQLiteOpenHelper`, no Room/KSP — avoids version risk on this Kotlin 2.2.10/AGP 9
   toolchain). Tables: `fuel_fillup`, `maintenance_item`, `bike_state` (odometer).
   Still TODO: ride history + recent destinations tables.
@@ -199,7 +199,7 @@ rider needs zero paid setup. The author never pays regardless of how many instal
   re-discover). Backing VM methods exist (`setSsid/setWifiPassword/forgetDash`).
 - [~] **MapLibre + OSM migration.** Decided: **OpenFreeMap** (keyless vector, look-first;
   Liberty style), offline region download as a LATER add-on.
-  - [x] **In-app map → MapLibre + OpenFreeMap.** `NorthstarMap` rewritten on `MapView`
+  - [x] **In-app map → MapLibre + OpenFreeMap.** `OpenDashMap` rewritten on `MapView`
     (route line via LineManager, dest/rider symbols via SymbolManager, follow/nav/fit-route
     cameras). **Google Maps SDK fully removed** — dropped `maps-compose` +
     `play-services-maps`, the `MAPS_API_KEY` manifest meta-data + build wiring. No Maps key
@@ -254,7 +254,7 @@ rider needs zero paid setup. The author never pays regardless of how many instal
 - [x] **Nicer basemap** — swapped OSM-standard tiles for CartoDB **Voyager**
   (cleaner, Google-Maps-like); cache dir bumped to `tiles_voyager` to drop the old
   style; standby bg matched to Voyager land colour.
-- [x] **App icon** — Northstar compass star (`~/Downloads/Northstar.png`) wired as
+- [x] **App icon** — OpenDash compass star (`~/Downloads/OpenDash.png`) wired as
   adaptive (star foreground + #080809 bg) + legacy square/round at all densities.
 - [x] **Share fixed (singleTask)** — MainActivity `singleTop`→`singleTask`, so a Maps
   share routes into the one existing (connected) instance instead of a new "not
@@ -283,9 +283,9 @@ rider needs zero paid setup. The author never pays regardless of how many instal
 ## Pending (needs the phone reconnected)
 
 - [ ] **Kill the duplicate app entries + work-profile install.** Likely an old
-  `com.example.northstar` build (default id, pre-`com.northstar.app`) still on the
-  device → two icons. When the phone's back: `adb uninstall com.example.northstar`,
-  `adb uninstall com.northstar.app`, then reinstall to the personal user only:
+  `com.example.opendash` build (default id, pre-`com.opendash.app`) still on the
+  device → two icons. When the phone's back: `adb uninstall com.example.opendash`,
+  `adb uninstall com.opendash.app`, then reinstall to the personal user only:
   `adb install --user 0 app/build/outputs/apk/debug/app-debug.apk`.
 - [ ] Consider Voyager **@2x** tiles for extra crispness on the dash — deferred:
   512 px tiles are ~4× memory, would need the LruCache (120) cut to ~40 to be safe.

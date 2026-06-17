@@ -51,8 +51,31 @@ class SyncRepository private constructor(context: Context) {
 
     private val regs = mutableListOf<ListenerRegistration>()
 
+    init {
+        // Heal any duplicate seeded maintenance items left by older upgrade paths, as soon as the
+        // store is created — even before sign-in, so the Garage is clean offline too.
+        io.launch { reconcileMaintenanceDuplicates() }
+    }
+
     private fun userDoc(): DocumentReference? =
         auth?.currentUser?.uid?.let { fs?.collection("users")?.document(it) }
+
+    /**
+     * Collapse duplicate seeded maintenance items locally and, when signed in, remove the stale
+     * Firestore docs + re-push the survivors under their canonical sids so the cloud copy can't
+     * re-sync the duplicates back. No-op once everything is canonical (so it won't churn).
+     */
+    private fun reconcileMaintenanceDuplicates() {
+        val removed = db.dedupeMaintenance()
+        if (removed.isEmpty()) return
+        android.util.Log.i(TAG, "maintenance dedupe: removed ${removed.size} duplicate/stale row(s)")
+        val mc = userDoc()?.collection("maintenance")
+        if (mc != null) {
+            removed.forEach { mc.document(it).delete() }
+            db.maintenanceItems().forEach { pushMaintenance(it) }
+        }
+        bump()
+    }
 
     // ── Reads (local) ────────────────────────────────────────────────────
     fun odometer() = db.odometer()
@@ -202,7 +225,10 @@ class SyncRepository private constructor(context: Context) {
                 intervalKm = (doc.getLong("intervalKm") ?: 0L).toInt(), lastDoneOdoKm = (doc.getLong("lastDoneOdoKm") ?: 0L).toInt(),
                 lastDoneDateMs = doc.getLong("lastDoneDateMs") ?: 0L,
                 intervalMonths = (doc.getLong("intervalMonths") ?: 0L).toInt())) },
-            remove = { db.deleteMaintenanceBySid(it) })
+            remove = { db.deleteMaintenanceBySid(it) },
+            // A remote pull can re-introduce a duplicate (old random-sid doc alongside the seed
+            // sid) — collapse it again and clean the cloud so it converges instead of ping-ponging.
+            afterApply = { reconcileMaintenanceDuplicates() })
 
         listen(u.collection("saved"),
             uploadLocal = { db.savedLocations().forEach { pushSaved(it) } },
@@ -239,6 +265,7 @@ class SyncRepository private constructor(context: Context) {
         uploadLocal: () -> Unit,
         apply: (DocumentSnapshot) -> Unit,
         remove: (String) -> Unit,
+        afterApply: () -> Unit = {},
     ) {
         // One-time: if the cloud copy is empty, push our local rows up to seed it.
         col.get().addOnSuccessListener { qs -> if (qs.isEmpty) io.launch { uploadLocal() } }
@@ -251,7 +278,7 @@ class SyncRepository private constructor(context: Context) {
                         DocumentChange.Type.REMOVED -> remove(ch.document.id)
                     }
                 }
-                if (snap.documentChanges.isNotEmpty()) bump()
+                if (snap.documentChanges.isNotEmpty()) { afterApply(); bump() }
             }
         }
     }

@@ -44,8 +44,8 @@ android {
         // don't pretend to support it. Also makes the API-26 notification paths always safe.
         minSdk = 29
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.3"
+        versionCode = 7
+        versionName = "1.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

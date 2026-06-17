@@ -332,6 +332,50 @@ class NorthstarDb private constructor(context: Context) :
     fun deleteMaintenanceBySid(sid: String) =
         writableDatabase.delete("maintenance_item", "sid=?", arrayOf(sid))
 
+    /**
+     * Collapse duplicate SEEDED maintenance items (e.g. two "Chain clean & lube" rows). Older
+     * upgrades inserted the canonical seed rows by deterministic sid, but pre-v3 rows had random
+     * sids backfilled, so the seed insert couldn't match them and produced duplicates. For each
+     * seed NAME we keep the most-progressed row (latest done odo, then date) and realign it to the
+     * canonical seed sid + icon, deleting the rest. Custom (non-seed-name) items are left alone.
+     *
+     * Returns the sids that no longer exist (deleted duplicates + replaced sids of realigned
+     * keepers) so the caller can drop the matching Firestore docs and they don't re-sync.
+     * Idempotent: a no-op once the data is canonical.
+     */
+    fun dedupeMaintenance(): List<String> {
+        val removed = ArrayList<String>()
+        val seedByName = SEED_ITEMS.associateBy { it.name }
+        val wdb = writableDatabase
+        wdb.beginTransaction()
+        try {
+            val bySeedName = maintenanceItems().filter { seedByName.containsKey(it.name) }.groupBy { it.name }
+            for ((name, group) in bySeedName) {
+                val seed = seedByName.getValue(name)
+                // Keep the row with the most service history; tie-break newest, then lowest id.
+                val keeper = group.maxWith(
+                    compareBy({ it.lastDoneOdoKm }, { it.lastDoneDateMs }, { -it.id })
+                )
+                group.filter { it.id != keeper.id }.forEach {
+                    wdb.delete("maintenance_item", "id=?", arrayOf(it.id.toString()))
+                    removed.add(it.sid)
+                }
+                if (keeper.sid != seed.sid) {
+                    removed.add(keeper.sid)   // old doc must go from the cloud too
+                    wdb.update(
+                        "maintenance_item",
+                        ContentValues().apply { put("sid", seed.sid); put("icon_key", seed.icon) },
+                        "id=?", arrayOf(keeper.id.toString()),
+                    )
+                }
+            }
+            wdb.setTransactionSuccessful()
+        } finally {
+            wdb.endTransaction()
+        }
+        return removed
+    }
+
     // ── Saved destinations ─────────────────────────────────────────────────
     fun savedLocations(): List<SavedLocation> {
         val out = ArrayList<SavedLocation>()

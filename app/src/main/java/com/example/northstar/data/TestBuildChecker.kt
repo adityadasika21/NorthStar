@@ -2,44 +2,35 @@ package com.example.northstar.data
 
 import android.content.Context
 import android.util.Log
+import com.example.northstar.util.BuildId
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 
 /**
- * Side-channel for installing test builds WITHOUT a version bump or a GitHub release.
+ * Decides whether the installed APK matches the published build, by CHECKSUM.
  *
- * The version stays pinned at 1.3.0; instead each pushed APK carries an opaque `buildId`
- * (timestamp/sha) written to the Firestore doc `meta/test_build` by `tools/firebase/push-build.mjs`,
- * alongside a direct download URL (Firebase Storage). The app compares that buildId to the last
- * one it installed (local prefs) — so a freshly pushed build is offered even though its
- * versionName/Code is identical. Install reuses [UpdateChecker.download]/[UpdateChecker.install];
- * because every build is signed with the same key, it installs in place over the current app.
+ * The version stays pinned (e.g. 1.3.0), so version comparison can't tell builds apart. Instead
+ * `tools/firebase/push-build.mjs` records the pushed APK's SHA-256 (12-hex) in `meta/test_build`,
+ * and the app compares it against [BuildId.sha12] — the hash of its OWN running APK. If they
+ * differ, a different build is published and the app prompts a redownload + reinstall.
  *
- * No-op unless a Firebase project is configured ([FirebaseGate]).
+ * Checksum (not a stored "last installed" id) is the source of truth: it's correct no matter HOW
+ * the build was installed — in-app, the public permalink, or adb — and the prompt clears itself the
+ * moment the matching APK is running. Same idea works for a release channel once releases publish a
+ * checksum; see [UpdateChecker]. No-op unless a Firebase project is configured ([FirebaseGate]).
  */
 object TestBuildChecker {
     private const val TAG = "TestBuildChecker"
-    private const val PREFS = "northstar_testbuild"
-    private const val KEY_INSTALLED = "installed_build_id"
     private const val META_DOC = "meta/test_build"
 
     data class TestBuild(
         val buildId: String,
+        val sha256: String,    // 12-hex SHA-256 of the published APK (matches BuildId.sha12)
         val url: String,
         val builtAt: String,   // human label, e.g. "2026-06-18 14:30"
         val notes: String,
         val sizeBytes: Long,
     )
-
-    /** The build id the app last installed via this channel (empty if never). */
-    fun installedBuildId(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_INSTALLED, "") ?: ""
-
-    /** Record the build id we just handed to the installer, so it isn't offered again. */
-    fun markInstalled(context: Context, buildId: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY_INSTALLED, buildId).apply()
-    }
 
     /** Fetch the currently-published test build, or null if none/Firebase off/error. */
     suspend fun fetchLatest(context: Context): TestBuild? {
@@ -49,11 +40,11 @@ object TestBuildChecker {
             val snap = FirebaseFirestore.getInstance()
                 .collection(parts[0]).document(parts[1]).get().await()
             if (!snap.exists()) return null
-            val buildId = snap.getString("buildId").orEmpty()
             val url = snap.getString("url").orEmpty()
-            if (buildId.isBlank() || url.isBlank()) return null
+            if (url.isBlank()) return null
             TestBuild(
-                buildId = buildId,
+                buildId = snap.getString("buildId").orEmpty(),
+                sha256 = snap.getString("sha256").orEmpty(),
                 url = url,
                 builtAt = snap.getString("builtAt").orEmpty(),
                 notes = snap.getString("notes").orEmpty(),
@@ -62,7 +53,14 @@ object TestBuildChecker {
         }.onFailure { Log.w(TAG, "test-build check failed: ${it.message}") }.getOrNull()
     }
 
-    /** True if [build] is something other than what we last installed. */
-    fun isNew(context: Context, build: TestBuild): Boolean =
-        build.buildId.isNotBlank() && build.buildId != installedBuildId(context)
+    /**
+     * True if the running APK's checksum differs from the published one — i.e. a redownload +
+     * reinstall is needed. False when already on the published build, or when either checksum is
+     * unknown (don't nag if we can't be sure).
+     */
+    fun needsInstall(context: Context, build: TestBuild): Boolean {
+        if (build.sha256.isBlank()) return false
+        val mine = BuildId.sha12(context)
+        return mine != "unknown" && mine != build.sha256
+    }
 }

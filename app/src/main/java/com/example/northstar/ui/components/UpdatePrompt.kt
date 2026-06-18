@@ -38,12 +38,12 @@ fun UpdatePrompt() {
     var progress by remember { mutableFloatStateOf(0f) }
     var failed by remember { mutableStateOf(false) }
 
-    // One background check per app open.
+    // One background check per app open. Offer by APK checksum when the release publishes one,
+    // else by version (see UpdateChecker.shouldOffer) — so the prompt reflects the actual installed
+    // build, not just the version string.
     LaunchedEffect(Unit) {
         val latest = withContext(Dispatchers.IO) { UpdateChecker.fetchLatest(context) }
-        if (latest != null &&
-            UpdateChecker.isNewer(latest.versionName, UpdateChecker.currentVersionName(context))
-        ) {
+        if (latest != null && UpdateChecker.shouldOffer(context, latest)) {
             release = latest
         }
     }

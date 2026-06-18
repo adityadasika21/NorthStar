@@ -165,10 +165,11 @@ fun SettingsScreen(
 }
 
 /**
- * Test-build channel: installs a freshly pushed APK WITHOUT a version bump. Checks the
- * Firestore `meta/test_build` doc for a newer buildId than the one last installed and offers a
- * one-tap download+install (same signing key → installs in place, keeping data). Invisible when
- * no test build is published / Firebase is off.
+ * Test-build channel: installs a freshly pushed APK WITHOUT a version bump. Compares the running
+ * APK's CHECKSUM against the published one (Firestore `meta/test_build`) and, if they differ,
+ * offers a one-tap download+install (same signing key → installs in place, keeping data). Checksum
+ * means it's correct however the build was installed, and the card clears itself once the matching
+ * APK is running. Invisible when up to date / no build published / Firebase off.
  */
 @Composable
 private fun TestBuildCard() {
@@ -189,8 +190,8 @@ private fun TestBuildCard() {
     LaunchedEffect(Unit) { refresh() }
 
     val b = build
-    // Nothing published, or already on it → don't clutter Settings.
-    if (b == null || !com.example.northstar.data.TestBuildChecker.isNew(ctx, b)) return
+    // Nothing published, or the running APK already matches the published checksum → no card.
+    if (b == null || !com.example.northstar.data.TestBuildChecker.needsInstall(ctx, b)) return
 
     fun installNow() {
         busy = true; status = "Downloading…"
@@ -202,9 +203,10 @@ private fun TestBuildCard() {
             }
             if (file == null) { status = "Download failed — try again"; busy = false; return@launch }
             status = "Opening installer…"
+            // No bookkeeping needed: once the new APK is running its checksum matches the published
+            // one, so needsInstall() returns false and this card disappears on its own.
             val started = com.example.northstar.data.UpdateChecker.install(ctx, file)
-            if (started) com.example.northstar.data.TestBuildChecker.markInstalled(ctx, b.buildId)
-            else status = "Allow “install unknown apps”, then tap again"
+            if (!started) status = "Allow “install unknown apps”, then tap again"
             busy = false
         }
     }

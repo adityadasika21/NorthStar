@@ -36,7 +36,25 @@ object UpdateChecker {
         val notes: String,         // release body (markdown changelog)
         val apkUrl: String,        // browser_download_url of the .apk asset
         val apkSize: Long,         // bytes, 0 if unknown
+        val sha256: String = "",   // 12-hex APK checksum, if the release notes publish one (see [shouldOffer])
     )
+
+    /** Pull a published APK checksum out of release notes, e.g. a line "sha256: 1caad8bed911". */
+    private fun parseSha(body: String): String =
+        Regex("sha-?256[:\\s]+([0-9a-fA-F]{12,64})", RegexOption.IGNORE_CASE)
+            .find(body)?.groupValues?.get(1)?.lowercase()?.take(12).orEmpty()
+
+    /**
+     * Decide whether to offer [remote] to the user — by CHECKSUM when the release publishes one
+     * (offer iff the running APK's hash differs), else by version. Checksum is exact and
+     * self-correcting: the prompt vanishes the moment the matching APK is installed, regardless of
+     * how it got there. Mirrors the test channel ([com.example.northstar.data.TestBuildChecker]).
+     */
+    fun shouldOffer(context: Context, remote: ReleaseInfo): Boolean {
+        val mine = com.example.northstar.util.BuildId.sha12(context)
+        return if (remote.sha256.isNotBlank() && mine != "unknown") mine != remote.sha256
+        else isNewer(remote.versionName, currentVersionName(context))
+    }
 
     /** The version string the app was built with (from the installed package). */
     fun currentVersionName(context: Context): String =
@@ -81,12 +99,14 @@ object UpdateChecker {
             }
             if (apkUrl.isBlank()) return null
 
+            val body = json.optString("body").trim()
             ReleaseInfo(
                 versionName = versionName,
                 title = json.optString("name").ifBlank { tag },
-                notes = json.optString("body").trim(),
+                notes = body,
                 apkUrl = apkUrl,
                 apkSize = apkSize,
+                sha256 = parseSha(body),
             )
         } finally {
             conn.disconnect()

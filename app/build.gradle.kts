@@ -49,6 +49,18 @@ android {
         versionCode = 11
         versionName = "1.3.0"
 
+        // Test-channel telemetry: ride/connection diagnostics upload to Firestore so logs can be
+        // pulled remotely (no adb) while iterating on test builds. MUST be flipped to "false" for
+        // any real public release — see DiagnosticsUploader. Gated additionally on a configured
+        // Firebase project, so it's a no-op on bring-your-own-keys builds without google-services.json.
+        buildConfigField("boolean", "DIAG_UPLOAD", "true")
+
+        // Ship arm64-v8a only: every modern OEM phone (OnePlus/Samsung/Xiaomi/Nothing…) is
+        // 64-bit ARM; the other ABIs (armeabi-v7a/x86/x86_64) are old 32-bit or emulators. This
+        // cuts the universal APK from ~107 MB to well under GitHub's 100 MB file limit so the
+        // test build can live in the repo for direct download.
+        ndk { abiFilters += "arm64-v8a" }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -74,6 +86,9 @@ android {
             // absent (contributors building locally) — that build just can't update users.
             signingConfig = if (hasReleaseSigning) signingConfigs.getByName("release")
                             else signingConfigs.getByName("debug")
+            // Public release builds never upload diagnostics, and the test-build installer
+            // (gated on BuildConfig.DEBUG) is absent — release stays clean automatically.
+            buildConfigField("boolean", "DIAG_UPLOAD", "false")
         }
     }
     compileOptions {

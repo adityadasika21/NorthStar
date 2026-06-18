@@ -25,8 +25,12 @@ class DashSession(private val scope: CoroutineScope) {
         private const val TAG           = "DashSession"
         private const val AUTH_TIMEOUT  = 15_000L
         private const val BURST_PAUSE   = 20L
-        private const val PROJ_HB_MS     = 250L   // 4 Hz
+        private const val PROJ_HB_MS     = 42L    // ~24 Hz — MUST match DashEncoder.FPS / the encoder loop rate
         private const val ROUTE_CARD_MS  = 1_000L // 1 Hz keep-alive
+        // While streaming, the dash sends a frame-decoded ack (09 06/04 55) every frame. If those
+        // STOP for this long the dash is gone (out of range / powered off) — but over UDP there's no
+        // socket error, so without this watchdog the app streams into the void showing "connected".
+        private const val RX_WATCHDOG_MS = 6_000L
         private const val HOSTNAME       = "Northstar"
     }
 
@@ -37,6 +41,8 @@ class DashSession(private val scope: CoroutineScope) {
     private var auth: DashAuth? = null
     @Volatile private var authConfirmed = false
     @Volatile private var authRetries = 0
+    // Wall-clock of the last packet received from the dash — fed to the RX watchdog.
+    @Volatile private var lastRxMs = 0L
     // One-shot: the first time the dash reports it DECODED our video (09 06 55). If this never
     // appears in the ride log, the dash never accepted the stream — the likely "Timeout!" cause.
     @Volatile private var loggedFirstAck = false
@@ -154,6 +160,7 @@ class DashSession(private val scope: CoroutineScope) {
             authConfirmed = false
             authRetries = 0
             loggedFirstAck = false
+            lastRxMs = 0L
 
             // RX loop MUST be running before the burst (early pubkey + no ICMP).
             launchReceiveLoop(sock)
@@ -225,6 +232,7 @@ class DashSession(private val scope: CoroutineScope) {
                     onError?.invoke("Lost connection to dash")
                     break
                 } ?: continue
+                lastRxMs = System.currentTimeMillis()
                 dispatchIncoming(pkt, sock)
             }
         }
@@ -324,6 +332,18 @@ class DashSession(private val scope: CoroutineScope) {
                 runCatching { sock.send(DashCommands.heartbeat()) }
                 // Keep the dash clock correct — it only shows what the phone feeds it.
                 if (n++ % 30 == 0) runCatching { sock.send(DashCommands.timeSync()) }
+                // RX watchdog: once the dash has acked at least one frame, a long silence means it
+                // dropped (out of range / off). UDP gives no error, so detect it here and fail the
+                // session instead of streaming into the void while the UI still says "connected".
+                if (_state.value == DashState.STREAMING && loggedFirstAck &&
+                    lastRxMs > 0L && System.currentTimeMillis() - lastRxMs > RX_WATCHDOG_MS
+                ) {
+                    val silent = (System.currentTimeMillis() - lastRxMs) / 1000
+                    Log.w(TAG, "RX watchdog: no dash packets for ${silent}s — link lost")
+                    com.example.northstar.data.RideDiagnostics.log("error", "RX watchdog: dash silent ${silent}s → link lost")
+                    fail("Dash stopped responding — connection lost")
+                    break
+                }
                 delay(1_000)
             }
         }

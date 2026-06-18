@@ -22,6 +22,7 @@ import com.example.northstar.ui.components.*
 import com.example.northstar.ui.theme.*
 import com.example.northstar.viewmodel.AuthViewModel
 import com.example.northstar.viewmodel.ConnectionState
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -152,12 +153,86 @@ fun SettingsScreen(
             Spacer(Modifier.height(6.dp))
         }
 
+        TestBuildCard()
+
         val appVersion = remember { com.example.northstar.data.UpdateChecker.currentVersionName(ctx) }
         Text(
             "NORTHSTAR v$appVersion · ${if (!auth.syncAvailable) "local only" else if (auth.isSignedIn) "sync on" else "sync off"}",
             color = TextDis, fontSize = 11.sp, fontFamily = GeistMonoFamily,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp),
         )
+    }
+}
+
+/**
+ * Test-build channel: installs a freshly pushed APK WITHOUT a version bump. Checks the
+ * Firestore `meta/test_build` doc for a newer buildId than the one last installed and offers a
+ * one-tap download+install (same signing key → installs in place, keeping data). Invisible when
+ * no test build is published / Firebase is off.
+ */
+@Composable
+private fun TestBuildCard() {
+    // Debug-channel only: the test-build installer must never appear in a public release build.
+    if (!com.example.northstar.BuildConfig.DEBUG) return
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var build by remember { mutableStateOf<com.example.northstar.data.TestBuildChecker.TestBuild?>(null) }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(true) }
+
+    suspend fun refresh() {
+        checking = true
+        build = com.example.northstar.data.TestBuildChecker.fetchLatest(ctx)
+        checking = false
+    }
+    LaunchedEffect(Unit) { refresh() }
+
+    val b = build
+    // Nothing published, or already on it → don't clutter Settings.
+    if (b == null || !com.example.northstar.data.TestBuildChecker.isNew(ctx, b)) return
+
+    fun installNow() {
+        busy = true; status = "Downloading…"
+        scope.launch {
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.example.northstar.data.UpdateChecker.download(ctx, b.url) { p ->
+                    status = "Downloading… ${(p * 100).toInt()}%"
+                }
+            }
+            if (file == null) { status = "Download failed — try again"; busy = false; return@launch }
+            status = "Opening installer…"
+            val started = com.example.northstar.data.UpdateChecker.install(ctx, file)
+            if (started) com.example.northstar.data.TestBuildChecker.markInstalled(ctx, b.buildId)
+            else status = "Allow “install unknown apps”, then tap again"
+            busy = false
+        }
+    }
+
+    NorthstarCard(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("New test build", color = Gold, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    buildString {
+                        append(b.builtAt.ifBlank { b.buildId })
+                        if (b.sizeBytes > 0) append(" · ${b.sizeBytes / (1024 * 1024)} MB")
+                    },
+                    color = TextMid, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp),
+                )
+                if (b.notes.isNotBlank())
+                    Text(b.notes, color = TextLo, fontSize = 11.5.sp, modifier = Modifier.padding(top = 2.dp))
+                if (status.isNotBlank())
+                    Text(status, color = TextLo, fontSize = 11.sp, fontFamily = GeistMonoFamily, modifier = Modifier.padding(top = 4.dp))
+            }
+            NorthstarBtn(
+                if (busy) "…" else "Install",
+                onClick = { if (!busy) installNow() },
+                icon = NorthstarIcons.Wifi,
+                variant = BtnVariant.Primary,
+                size = BtnSize.Sm,
+            )
+        }
     }
 }
 

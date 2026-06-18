@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,6 +39,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun DashScreen(vm: DashViewModel = viewModel()) {
     val ui by vm.ui.collectAsState()
+    val previewFrame by vm.previewFrame.collectAsState()
     val context = LocalContext.current
 
     // WiFi network request (13+: NEARBY_WIFI_DEVICES) + GPS for the map
@@ -303,7 +305,9 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                         .background(Brush.radialGradient(listOf(GoldGlow, Color.Transparent), radius = 200f))
                 )
             }
-            // Real Google Maps, clipped to the round Tripper shape.
+            // Round Tripper viewport. While streaming we show the EXACT frame being encoded to
+            // the dash (same renderer → pixel-identical to the bike). Before connecting there's no
+            // dash frame yet, so we fall back to the live MapLibre map for route preview.
             Box(
                 modifier = Modifier
                     .size(272.dp)
@@ -311,14 +315,26 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                     .border(6.dp, Color(0xFF0D0F10), CircleShape)
                     .border(2.dp, Line2, CircleShape),
             ) {
-                NorthstarMap(
-                    riderLat = ui.riderLat,
-                    riderLng = ui.riderLng,
-                    dest = ui.destLatLng,
-                    routePoints = ui.routePoints,
-                    hasLocationPermission = hasEssentialPermissions(),
-                    modifier = Modifier.fillMaxSize(),
-                )
+                val dashFrame = previewFrame
+                if (streaming && dashFrame != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = dashFrame.asImageBitmap(),
+                        contentDescription = "Live dash frame",
+                        // The dash is round and shows the centred circle of the 526×300 frame;
+                        // Crop into the circular viewport reproduces exactly that.
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    NorthstarMap(
+                        riderLat = ui.riderLat,
+                        riderLng = ui.riderLng,
+                        dest = ui.destLatLng,
+                        routePoints = ui.routePoints,
+                        hasLocationPermission = hasEssentialPermissions(),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
 

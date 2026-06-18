@@ -30,10 +30,12 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
     companion object {
         const val WIDTH   = 526
         const val HEIGHT  = 300
-        // Constant rate, the better-dash recommendation: the stock RE app and better-dash both
-        // stream 4 fps and the projection keep-alive repeats at 4 Hz. The decoder "blinks" above
-        // its ceiling, so a steady 4 fps (matched to the keep-alive) is what it decodes cleanly.
-        const val FPS     = 4
+        // Frame rate. better-dash uses 4 fps; we've climbed to 12 (delivered ~10, thermal OK on the
+        // bike) and are now field-testing 24 since it held steady. The projection keep-alive
+        // (DashSession.PROJ_HB_MS) is bumped to match — they MUST stay equal. The phone pipeline may
+        // cap actual delivery below 24 (per-frame render+encode cost); the ride log shows the real
+        // rate. Revert toward 12 if the dash decoder blinks/stutters.
+        const val FPS     = 24
         // ~1.2 Mbps. 0.8 briefly blocked/pixelated on high-motion frames (sharp turns, zoom) before
         // the rate settled; 1.2 gives the encoder headroom for those moments yet stays far under the
         // old 2.0 that overran the decoder.

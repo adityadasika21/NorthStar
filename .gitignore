@@ -22,8 +22,17 @@ app/google-services.json
 # Distributable APKs live on GitHub Releases, not in the repo.
 /dist/
 *.apk
+# Per-version release folders (APK + changelog) kept locally, untracked.
+/version 1.3/
 
 # Release signing — the private key + its credentials. NEVER commit these.
 signing.properties
 *.jks
 *.keystore
+
+# Local dev/test tooling (dash emulator + Firebase push/pull scripts). Kept on the author's
+# machine — it references a personal Firebase project and isn't part of the app. NEVER commit
+# the Firebase Admin service-account key it uses.
+/tools/
+serviceAccount.json
+node_modules/

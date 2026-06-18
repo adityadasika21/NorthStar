@@ -50,14 +50,16 @@ class RideRecorder {
     }
 
     /**
-     * Finish the ride. Returns null for a trivial session (barely moved / too short) so we
-     * don't litter the history with parking-lot blips.
+     * Finish the ride. Returns null for a trivial session so we don't litter the history with
+     * parking-lot blips. A ride must have COVERED GROUND ([MIN_RIDE_M]); the old rule also kept any
+     * session that merely LASTED a while, which saved 0 km "rides" whenever you connected and sat
+     * (traffic/parked) for >90 s before disconnecting — distance is the only thing that makes it a ride.
      */
     fun stop(): Ride? {
         recording = false
         val end = System.currentTimeMillis()
         val durationS = ((end - startMs) / 1000L).coerceAtLeast(0)
-        if (points.size < 2 || (distanceM < MIN_RIDE_M && durationS < MIN_RIDE_S)) return null
+        if (points.size < 2 || distanceM < MIN_RIDE_M) return null
         val avg = if (durationS > 0) distanceM / durationS else 0.0
         val first = points.first(); val lastPt = points.last()
         return Ride(
@@ -72,8 +74,7 @@ class RideRecorder {
 
     companion object {
         private const val MIN_MOVE_M = 8.0     // thin track points to ~every 8 m
-        private const val MIN_RIDE_M = 150.0   // discard rides shorter than this…
-        private const val MIN_RIDE_S = 90L     // …unless they lasted at least this long
+        private const val MIN_RIDE_M = 150.0   // discard rides that covered less than this (parking-lot blips)
         private const val ACC_GATE_M = 20f     // ignore fixes worse than this (m); noisy fixes inflate distance
         private const val STILL_SPEED = 0.7f   // m/s (~2.5 km/h); below this, a step is parked GPS drift
     }

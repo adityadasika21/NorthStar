@@ -45,6 +45,7 @@ data class DashUiState(
     val hasGps: Boolean = false,
     val hasRoute: Boolean = false,
     val offRoute: Boolean = false,
+    val recalculating: Boolean = false, // off-route long enough / actively rerouting → ETA frozen, pill shows "Recalculating"
     val headingUp: Boolean = true,
     val followMode: Boolean = true,
     val thermal: String = "OK",
@@ -60,6 +61,13 @@ data class DashUiState(
 class DashViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(DashUiState())
     val ui = _ui.asStateFlow()
+
+    // The EXACT frame being H.264-encoded to the dash, published for the in-app "Dash view"
+    // so the phone preview is pixel-identical to the bike screen (same renderer, not a second
+    // map engine). A fresh immutable snapshot per redraw — the encoder's own bitmap is mutated
+    // on a background thread and recycled on teardown, so handing that out would tear/crash.
+    private val _previewFrame = MutableStateFlow<Bitmap?>(null)
+    val previewFrame = _previewFrame.asStateFlow()
 
     private val session     = DashSession(viewModelScope)
     private val wifiManager = DashWifiManager(app, viewModelScope)
@@ -106,6 +114,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var fixSpeed = 0f             // m/s
     private var fixWallMs = 0L
     private var lastFixTime = 0L
+    private var gpsFixIntervalMs = 0.0   // EMA of the gap between fixes — exposes screen-off GPS throttling
 
     // Smoothed rider position shown on the dash frame (locked to the camera centre so the
     // marker stays put and the map slides under it). null = no GPS.
@@ -126,6 +135,11 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var offRouteSince = 0L
     @Volatile private var lastRerouteAt = 0L
     @Volatile private var rerouting = false
+    // Debounce for the "Recalculating" state (ignore 1-frame off-route GPS blips).
+    @Volatile private var offRouteStreakStart = 0L
+    // Rolling average of actual moving speed (m/s), held through stops — drives a STEADY ETA
+    // instead of one that swings with instantaneous speed at every brake/light.
+    private var smoothSpeedMps = 0.0
 
     // Map-matched rider position: snapped onto the route while on it (kills the GPS
     // lane/road jitter), raw GPS when genuinely off-route. Drives the marker + camera.
@@ -144,14 +158,22 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val MANUAL_IDLE_MS = 8_000L
         private const val FORCE_REDRAW_MS = 2_000L
-        private const val SMOOTH_TAU = 0.28      // camera smoothing time constant (s)
-        // CONSTANT frame rate, the better-dash recommendation. The Tripper decoder "blinks"
-        // (stutters) above its ceiling, and the projection keep-alive MUST repeat at the encoder
-        // rate (4 Hz — see DashCommands/DashSession). Driving 15 fps (above the ceiling) with a
-        // dynamic speed-based rate is what made the dash jitter; a steady 4 fps matched to the
-        // keep-alive is what the dash decodes cleanly. The dead-reckoning predictor still smooths
-        // motion between the 1 Hz GPS fixes, so a delivered frame still shows continuous movement.
-        private const val FPS = 4
+        private const val SMOOTH_TAU = 0.20      // camera smoothing time constant (s) — tighter so the map trails the bike less
+        // GPS bearing is only meaningful while genuinely moving; below this it's noise that
+        // would spin the heading-up map (the "turns to the opposite direction when I stop" bug).
+        private const val BEARING_MIN_SPEED = 2.0f   // m/s (~7 km/h)
+        // Lead the displayed position by the pipeline latency (camera ease + H.264 encode + RTP +
+        // dash decode/display ≈ 0.5 s) so the dash shows where the bike IS, not where it was.
+        private const val DISPLAY_LEAD_S = 0.4
+        // Cap on how far ahead the constant-velocity predictor projects (s of travel). Bounds the
+        // over-shoot if a fix is missed across a real stop / a long dropout; below this it tracks
+        // the rider's actual motion so the camera never freezes between sparse (screen-off) fixes.
+        private const val MAX_PREDICT_S = 3.0
+        // Frame rate — encoder loop + projection keep-alive (DashSession.PROJ_HB_MS) MUST match.
+        // 4 → 12 (delivered ~10, steady, thermal OK) → now 24 since 12 held. The phone may not
+        // deliver a full 24 (per-frame render+encode cost caps it); the ride log's frames= shows the
+        // real rate. Drop back toward 12 if the dash blinks/stutters.
+        private const val FPS = 24
         private const val MAX_AUTH_ATTEMPTS = 4   // the fw 11.63 handshake often needs a couple of tries
     }
 
@@ -171,16 +193,17 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Distance (m) to dead-reckon ahead of the last GPS fix, given the time since it arrived.
-     * Full speed for the first ~1 s (covers the normal 1 Hz fix gap), then an exponentially
-     * tapering contribution that saturates at ~1.5 s of extra travel — so a long dropout glides
-     * smoothly instead of freezing, but can't over-shoot far past an unannounced brake/stop.
+     *
+     * CONSTANT velocity (distance = speed × time), capped at [MAX_PREDICT_S]. The old version
+     * tapered off after ~1 s, so the camera DECELERATED to a near-stop between fixes and then
+     * jumped when the next one landed — the "stuck then teleport" feel, especially with the screen
+     * off when GPS callbacks slow to multi-second gaps. Projecting at the true speed keeps the
+     * camera (and the constant [DISPLAY_LEAD_S] lead) moving smoothly through the gap, so each new
+     * fix lands where the camera already is — no jump. The cap bounds over-shoot if the rider
+     * stops/turns mid-gap; the next fix (with speed ~0 → predictor off) then eases it back.
      */
-    private fun predictedDistance(speedMps: Float, elapsedSec: Double): Double {
-        val full = elapsedSec.coerceIn(0.0, 1.0)
-        val taper = (elapsedSec - 1.0).coerceAtLeast(0.0)
-        val extra = 1.5 * (1.0 - Math.exp(-taper / 1.5))
-        return speedMps * (full + extra)
-    }
+    private fun predictedDistance(speedMps: Float, elapsedSec: Double): Double =
+        speedMps * elapsedSec.coerceIn(0.0, MAX_PREDICT_S)
 
     init {
         // Reflect the rider's stored dash WiFi config (SSID may be blank until discovered).
@@ -322,6 +345,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         }
         com.example.northstar.data.RideDiagnostics.init(getApplication())
         com.example.northstar.data.RideDiagnostics.start("connect")
+        // Stamp the running build's identity into the log so a pulled ride is matched 1:1 to the
+        // pushed APK — never again analyse a ride and not know which build produced it.
+        com.example.northstar.data.RideDiagnostics.log(
+            "build", "apk=${com.example.northstar.util.BuildId.sha12(getApplication())}" +
+                " vc=${com.example.northstar.BuildConfig.VERSION_CODE} name=${com.example.northstar.BuildConfig.VERSION_NAME}",
+        )
         com.example.northstar.data.RideDiagnostics.log(
             "connect", "ssid='${dashConfig.ssid}' needsDiscovery=${dashConfig.needsDiscovery} dest=${_ui.value.destinationName}",
         )
@@ -362,6 +391,9 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         releaseBackgroundResources()
         refreshStage()
         com.example.northstar.data.RideDiagnostics.stop("disconnect")
+        // Ride just ended and internet is back (dash WiFi released) — flush the log to Firestore
+        // now so it's retrievable even if the app isn't reopened. Test-channel + Firebase-gated.
+        com.example.northstar.data.DiagnosticsUploader.uploadPending(getApplication())
     }
 
     /**
@@ -601,9 +633,18 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
         var remainingM: Double? = null
         var etaSec: Double? = null
-        // Keep the last heading on GPS dropout (tunnels) — don't snap the map to north.
-        var heading = loc?.bearing ?: (if (camInit) camHdg else 0f)
+        // Heading-up direction. GPS bearing is trustworthy ONLY while genuinely moving — at a
+        // standstill (or a near-zero crawl) it's noise and would rotate the map to a random or
+        // opposite direction the instant you stop. So adopt it only above BEARING_MIN_SPEED (and
+        // when the fix actually carries a bearing); otherwise HOLD the last heading shown while
+        // moving. Also keeps the last heading through a GPS dropout (tunnels).
+        var heading = when {
+            loc != null && loc.hasBearing() && loc.speed >= BEARING_MIN_SPEED -> loc.bearing
+            camInit -> camHdg
+            else -> 0f
+        }
         var offRoute = false
+        var recalculating = false
 
         if (r != null && loc != null) {
             val ns = trackProgress(r, GeoPoint(loc.latitude, loc.longitude))
@@ -614,32 +655,47 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             // "Indira Enclave" when actually at "Isha"). trackProgress is still used
             // for nav distances + off-route/reroute detection (ns.offRoute), just not
             // to move the displayed marker.
-            if (loc.speed < 0.5f) heading = ns.heading
-            val speed = if (loc.speed > 0.5f) loc.speed.toDouble() else 11.0
-            // Smooth the ETA so it doesn't flicker every second with raw speed; recompute the
-            // absolute arrival clock only every 5 s so "arrives 1:32 PM" stays steady.
-            val rawEta = ns.remainingM / speed
-            smoothEtaSec = if (smoothEtaSec <= 0.0) rawEta else smoothEtaSec + (rawEta - smoothEtaSec) * 0.08
-            etaSec = smoothEtaSec
+            // (Heading is handled above — held steady at low speed, not snapped to the route
+            // segment, so a stop doesn't rotate the map.)
             val nowMs = System.currentTimeMillis()
-            if (etaArrivalMs == 0L || nowMs - lastArrivalCalcMs > 5_000) {
-                etaArrivalMs = nowMs + (smoothEtaSec * 1000).toLong()
-                // Refresh the displayed minutes only here (every 5 s) — not every tick — so the
-                // ETA reads steady like Google Maps instead of flickering with per-second jitter.
-                displayedEtaMin = Math.round(smoothEtaSec / 60.0).toInt()
-                lastArrivalCalcMs = nowMs
+
+            // "Recalculating" = off the line for >1.2 s (ignores a 1-frame GPS blip), OR a reroute
+            // request is in flight. While true the distance is measured against a route we've left,
+            // so the ETA is meaningless — we FREEZE it (and the pill says "Recalculating") rather
+            // than let the number lurch until the fresh route lands.
+            if (offRoute) { if (offRouteStreakStart == 0L) offRouteStreakStart = nowMs }
+            else offRouteStreakStart = 0L
+            recalculating = rerouting || (offRouteStreakStart != 0L && nowMs - offRouteStreakStart > 1_200)
+
+            if (!recalculating) {
+                // Steady ETA: divide remaining distance by a ROLLING AVERAGE speed (held through
+                // stops), not the instantaneous value — so it tracks a typical pace instead of
+                // swinging every time you brake, accelerate or sit at a light.
+                if (loc.speed > 0.5f) {
+                    smoothSpeedMps = if (smoothSpeedMps <= 0.0) loc.speed.toDouble()
+                                     else smoothSpeedMps + (loc.speed - smoothSpeedMps) * 0.05
+                }
+                val speed = smoothSpeedMps.coerceAtLeast(3.0)  // floor: no absurd ETA at a crawl
+                val rawEta = ns.remainingM / speed
+                smoothEtaSec = if (smoothEtaSec <= 0.0) rawEta else smoothEtaSec + (rawEta - smoothEtaSec) * 0.08
+                // Refresh the displayed minutes + arrival clock only every 5 s so they read steady
+                // (like Google Maps) instead of flickering every second.
+                if (etaArrivalMs == 0L || nowMs - lastArrivalCalcMs > 5_000) {
+                    etaArrivalMs = nowMs + (smoothEtaSec * 1000).toLong()
+                    displayedEtaMin = Math.round(smoothEtaSec / 60.0).toInt()
+                    lastArrivalCalcMs = nowMs
+                }
             }
+            etaSec = if (smoothEtaSec > 0.0) smoothEtaSec else null
             // Feed the dash's own turn-by-turn widget with CORRECT distances (next-turn
-            // + total remaining) and real arrival time. Glyph stays CONTINUE until
+            // + total remaining) and the (held) arrival time. Glyph stays CONTINUE until
             // other codes are verified.
             val (pv, pu) = toDashDistance(ns.nextTurnM)
             val (tv, tu) = toDashDistance(ns.remainingM)
-            val arrival = java.util.Calendar.getInstance().apply {
-                add(java.util.Calendar.SECOND, etaSec!!.toInt())
+            val etaHHMM = etaSec?.let {
+                val arrival = java.util.Calendar.getInstance().apply { add(java.util.Calendar.SECOND, it.toInt()) }
+                "%02d%02d".format(arrival.get(java.util.Calendar.HOUR_OF_DAY), arrival.get(java.util.Calendar.MINUTE))
             }
-            val etaHHMM = "%02d%02d".format(
-                arrival.get(java.util.Calendar.HOUR_OF_DAY), arrival.get(java.util.Calendar.MINUTE)
-            )
             session.updateNavInfo(DashCommands.NAV_MANEUVER_CONTINUE, pv, pu, tv, tu, etaHHMM)
             // Spoken/chime turn guidance (no-op when voice mode is OFF).
             voice.maybeAnnounce(ns.nextManeuver, ns.nextTurnM, ns.remainingM)
@@ -662,6 +718,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             etaMinutes = if (etaSec != null) displayedEtaMin else null,
             maneuver = null,
             offRoute = offRoute,
+            recalculating = recalculating,
         ) }
 
         updateThermal()
@@ -674,6 +731,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             com.example.northstar.data.RideDiagnostics.log(
                 "ride",
                 "gps=" + (loc?.let { "acc=%.0fm spd=%.1fm/s".format(it.accuracy, it.speed) } ?: "none") +
+                    " fixGap=%.0fms".format(gpsFixIntervalMs) +
                     " frames=${_ui.value.frameCount} thermal=${_ui.value.thermal}" +
                     " remaining=" + (remainingM?.let { "%.1fkm".format(it / 1000.0) } ?: "-") +
                     " offRoute=$offRoute",
@@ -684,9 +742,17 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // Capture each fresh GPS fix + its velocity for dead-reckoning.
         if (loc != null && loc.time != lastFixTime) {
             lastFixTime = loc.time
+            // Track the GAP between fixes (EMA): if this balloons past ~1 s with the screen off,
+            // GPS callbacks are being throttled — that's what the predictor has to bridge and the
+            // root of any residual "stuck then teleport". Logged in the periodic ride line.
+            val nowWall = System.currentTimeMillis()
+            if (fixWallMs > 0L) {
+                val gap = (nowWall - fixWallMs).toDouble()
+                gpsFixIntervalMs = if (gpsFixIntervalMs <= 0.0) gap else gpsFixIntervalMs + (gap - gpsFixIntervalMs) * 0.3
+            }
             fixLat = loc.latitude; fixLng = loc.longitude
             fixBearing = loc.bearing; fixSpeed = loc.speed
-            fixWallMs = System.currentTimeMillis()
+            fixWallMs = nowWall
         }
         // Extrapolate where the rider IS NOW (last fix + velocity·elapsed), so the camera
         // doesn't trail the bike between 1 Hz fixes. Only predict while genuinely moving.
@@ -698,8 +764,18 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 // runs at full speed for the first ~1 s (the normal 1 Hz fix gap) then tapers, so
                 // a long dropout — or a brake/stop the predictor hasn't heard about yet — can't
                 // fling the camera far ahead; the next fix then needs only a tiny eased correction.
+                // elapsed = time since the fix arrived; + DISPLAY_LEAD_S leads the marker past
+                // "now" to cancel the camera-ease + encode + RTP + dash-decode/display latency, so
+                // the dash tracks the bike instead of trailing ~0.5 s behind. The predictor's taper
+                // still caps how far a long dropout / unannounced brake can fling it.
                 val elapsed = (System.currentTimeMillis() - fixWallMs) / 1000.0
-                project(fixLat, fixLng, fixBearing.toDouble(), predictedDistance(fixSpeed, elapsed))
+                // Weak-GPS guard: a noisy fix has an unreliable position AND bearing/speed, so
+                // extrapolating from it flings the view ("teleport"). Scale the prediction down as
+                // accuracy worsens — full below 12 m, none above 40 m — so a poor signal just eases
+                // (heavily smoothed) toward the raw fix instead of dead-reckoning off a bad vector.
+                val conf = ((40f - (loc.accuracy)) / 28f).toDouble().coerceIn(0.0, 1.0)
+                val dist = predictedDistance(fixSpeed, elapsed + DISPLAY_LEAD_S) * conf
+                project(fixLat, fixLng, fixBearing.toDouble(), dist)
             }
             else -> matchedLat!! to matchedLng!!
         }
@@ -807,13 +883,20 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // from the smoothed estimate so they don't flicker every second.
         val mins = _ui.value.etaMinutes
         val arriving = mins != null && mins <= 0
-        val etaPrimary = if (mins != null && etaArrivalMs > 0L) when {
-            arriving   -> "Arriving"
-            mins >= 60 -> "${mins / 60}h ${mins % 60}m"
-            else       -> "$mins min"
-        } else null
-        // 12-hour arrival clock; hidden once arriving.
-        val etaSecondary = if (etaPrimary != null && !arriving)
+        val recalculating = _ui.value.recalculating
+        // Off-route / rerouting: tell the rider the ETA is being recomputed instead of showing a
+        // frozen or wildly-swinging number.
+        val etaPrimary = when {
+            recalculating && route != null -> "Recalculating"
+            mins != null && etaArrivalMs > 0L -> when {
+                arriving   -> "Arriving"
+                mins >= 60 -> "${mins / 60}h ${mins % 60}m"
+                else       -> "$mins min"
+            }
+            else -> null
+        }
+        // 12-hour arrival clock; hidden once arriving or while recalculating.
+        val etaSecondary = if (etaPrimary != null && !arriving && !recalculating)
             java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date(etaArrivalMs))
         else null
         val frame = MapRenderer.Frame(
@@ -840,6 +923,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             etaSecondary = etaSecondary,
         )
         mapRenderer.draw(Canvas(bmp), frame)
+        // Publish a snapshot for the in-app preview (immutable copy — see _previewFrame).
+        _previewFrame.value = bmp.copy(Bitmap.Config.ARGB_8888, false)
     }
 
     // ── Monotonic route-progress tracker ────────────────────────────────────
@@ -917,6 +1002,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         streamJob?.cancel(); streamJob = null
         encoder?.release(); encoder = null
         frameBitmap?.recycle(); frameBitmap = null
+        _previewFrame.value = null   // drop the stale dash frame so the preview falls back to the live map
     }
 
     override fun onCleared() {

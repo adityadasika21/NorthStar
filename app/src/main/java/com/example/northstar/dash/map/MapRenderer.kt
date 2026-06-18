@@ -231,13 +231,14 @@ class MapRenderer(private val tiles: TileProvider) {
     private fun drawTileBestEffort(canvas: Canvas, z: Int, tx: Int, ty: Int, dst: RectF) {
         tiles.get(z, tx, ty)?.let { canvas.drawBitmap(it, null, dst, tilePaint); return }
 
-        val ts = Mercator.TILE_SIZE
         var up = 1
         while (up <= 4 && z - up >= 0) {
             val anc = tiles.getCached(z - up, tx shr up, ty shr up)
             if (anc != null) {
                 val cells = 1 shl up
-                val sub = ts / cells
+                // Sub-region in the bitmap's OWN pixel space (512 px for hi-DPI tiles, 256 for any
+                // legacy tile) — not the logical TILE_SIZE, or it would sample the wrong quadrant.
+                val sub = anc.width / cells
                 val sxOff = (tx and (cells - 1)) * sub
                 val syOff = (ty and (cells - 1)) * sub
                 tileSrc.set(sxOff, syOff, sxOff + sub, syOff + sub)

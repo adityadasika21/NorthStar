@@ -1,5 +1,6 @@
 package com.example.northstar.dash.map
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -37,6 +38,10 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
         // it's used here for a PERSONAL, single-user, non-distributed build. The
         // compliant alternative for any public release is Google's Map Tiles API
         // (session token + the existing MAPS_API_KEY). Format args: (z, x, y).
+        //
+        // Standard 256 px tiles. (We briefly used scale=2 / 512 px "retina" tiles for extra
+        // crispness, but the 4× bigger bitmaps added memory/encode pressure that made the dash
+        // feel choppier, so we reverted to the lighter standard tiles.)
         private const val URL_TEMPLATE =
             "https://mt1.google.com/vt/lyrs=m&hl=en&z=%d&x=%d&y=%d"
         // Browser-like UA so the tile endpoint serves us normally.
@@ -44,14 +49,24 @@ class TileProvider(context: Context, private val scope: CoroutineScope) {
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
         private const val MAX_PREFETCH_TILES = 600
         private const val MIN_FETCH_GAP_MS = 60L // be gentle on OSM + the radio
+
+        /** ~1/5 of the app heap for the tile cache, clamped to a sane 48–128 MB. */
+        private fun memoryCacheBytes(ctx: Context): Int {
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val heapBytes = am.memoryClass.toLong() * 1024L * 1024L
+            return (heapBytes / 5L).coerceIn(48L * 1024 * 1024, 128L * 1024 * 1024).toInt()
+        }
     }
 
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    // Cache dir per tile source so a source switch doesn't serve stale tiles.
-    private val diskDir = File(context.cacheDir, "tiles_gmaps").apply { mkdirs() }
-    // Roomy enough to keep the current level PLUS a neighbouring zoom resident during a
-    // zoom transition, so the renderer's scaled-tile fallback always has something to draw.
-    private val memory = LruCache<String, Bitmap>(160)
+    // Cache dir per tile source so a source switch doesn't serve stale tiles. Bumped namespace so
+    // the lighter 256 px tiles don't collide with any 512 px tiles a prior build cached.
+    private val diskDir = File(context.cacheDir, "tiles_gmaps_v1").apply { mkdirs() }
+    // Byte-budgeted (not count-based): adapts to tile size and OEM heap, keeping the current zoom
+    // PLUS a neighbouring level resident for the renderer's scaled-tile fallback.
+    private val memory = object : LruCache<String, Bitmap>(memoryCacheBytes(context)) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
     private val inflight = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var lastFetchAt = 0L
 

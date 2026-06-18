@@ -4,7 +4,7 @@
 
 Northstar is an open-source Android app for the **Royal Enfield Himalayan 450**. It projects turn-by-turn navigation onto the bike's round **Tripper TFT dash** without cooking the phone in your tank bag.
 
-> ⚠️ Independent, community project. **Not affiliated with, endorsed by, or supported by Royal Enfield.** The dash protocol is reverse-engineered and unofficial — use at your own risk.
+> ⚠️ Independent, community project. **Not affiliated with, endorsed by, or supported by Royal Enfield.** The dash protocol is reverse-engineered and unofficial, so use it at your own risk. To be clear about what that means in practice: Northstar only streams a video feed to the Tripper **display** over Wi-Fi (and reads the joystick) — it never touches the ECU, engine, brakes or anything you ride with, and it can't modify the bike. The realistic worst case is the dash simply doesn't show the stream, or needs a power-cycle. The protocol is validated on the author's firmware (**11.63**); other firmwares may handshake differently.
 
 ---
 

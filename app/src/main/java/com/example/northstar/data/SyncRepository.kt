@@ -66,11 +66,13 @@ class SyncRepository private constructor(context: Context) {
      * re-sync the duplicates back. No-op once everything is canonical (so it won't churn).
      */
     private fun reconcileMaintenanceDuplicates() {
-        val removed = db.dedupeMaintenance()
-        if (removed.isEmpty()) return
-        android.util.Log.i(TAG, "maintenance dedupe: removed ${removed.size} duplicate/stale row(s)")
+        val (removed, changed) = db.dedupeMaintenance()
+        if (!changed) return
+        android.util.Log.i(TAG, "maintenance dedupe: removed ${removed.size} stale row(s), realigned names/sids")
         val mc = userDoc()?.collection("maintenance")
         if (mc != null) {
+            // Drop the stale docs, then re-push EVERY survivor so a name/sid realignment (not just a
+            // deletion) reaches the cloud — otherwise the next snapshot would pull the old name back.
             removed.forEach { mc.document(it).delete() }
             db.maintenanceItems().forEach { pushMaintenance(it) }
         }
@@ -106,9 +108,9 @@ class SyncRepository private constructor(context: Context) {
     /**
      * Log a service VISIT: a single event that resets the countdown on every covered
      * maintenance item, links to a scheduled milestone if [scheduledKey] is set, and records the
-     * cost + uploaded invoice. Service records / scheduled services / documents are LOCAL-only —
-     * the invoice/document files live on-device, so syncing just metadata would point other
-     * devices at files they don't have. Maintenance items themselves still sync.
+     * cost + uploaded invoice. The record's METADATA syncs (so the service history survives a
+     * reinstall / restores on a second device); the invoice FILE stays on-device, so a restored
+     * record just has no invoice attached. Scheduled services / documents remain local-only.
      */
     fun logVisit(
         title: String, kind: String, scheduledKey: String, items: List<MaintenanceItem>,
@@ -119,16 +121,18 @@ class SyncRepository private constructor(context: Context) {
             val u = m.copy(lastDoneOdoKm = odoKm, lastDoneDateMs = now)
             db.upsertMaintenance(u); pushMaintenance(u)
         }
-        db.upsertServiceRecord(ServiceRecord(
+        val rec = ServiceRecord(
             sid = NorthstarDb.newSid(), title = title, kind = kind, scheduledKey = scheduledKey,
             itemSids = items.map { it.sid }, odometerKm = odoKm, dateMs = now, cost = cost,
-            invoicePath = invoicePath, note = note))
+            invoicePath = invoicePath, note = note)
+        db.upsertServiceRecord(rec); pushServiceRecord(rec)
         bump()
     }
 
     fun serviceRecords() = db.serviceRecords()
     fun deleteServiceRecord(r: ServiceRecord) {
         db.deleteServiceRecordBySid(r.sid)
+        userDoc()?.collection("services")?.document(r.sid)?.delete()
         if (r.invoicePath.isNotBlank()) runCatching { java.io.File(r.invoicePath).delete() }
         bump()
     }
@@ -192,6 +196,13 @@ class SyncRepository private constructor(context: Context) {
                 "lastDoneOdoKm" to m.lastDoneOdoKm, "lastDoneDateMs" to m.lastDoneDateMs,
                 "intervalMonths" to m.intervalMonths))
     }
+    private fun pushServiceRecord(r: ServiceRecord) {
+        // Metadata only — the invoice file is device-local and isn't uploaded.
+        userDoc()?.collection("services")?.document(r.sid)?.set(
+            mapOf("title" to r.title, "kind" to r.kind, "scheduledKey" to r.scheduledKey,
+                "itemSids" to r.itemSids, "odometerKm" to r.odometerKm, "dateMs" to r.dateMs,
+                "cost" to r.cost, "note" to r.note))
+    }
     private fun pushSaved(s: SavedLocation) {
         userDoc()?.collection("saved")?.document(s.sid)?.set(
             mapOf("name" to s.name, "lat" to s.lat, "lng" to s.lng, "note" to s.note, "createdMs" to s.createdMs))
@@ -248,6 +259,22 @@ class SyncRepository private constructor(context: Context) {
                 startLat = doc.getDouble("startLat") ?: 0.0, startLng = doc.getDouble("startLng") ?: 0.0,
                 endLat = doc.getDouble("endLat") ?: 0.0, endLng = doc.getDouble("endLng") ?: 0.0)) },
             remove = { db.deleteRideBySid(it) })
+
+        listen(u.collection("services"),
+            uploadLocal = { db.serviceRecords().forEach { pushServiceRecord(it) } },
+            apply = { doc ->
+                @Suppress("UNCHECKED_CAST")
+                val itemSids = (doc.get("itemSids") as? List<String>) ?: emptyList()
+                // Keep a local invoice file if this device already has the record; a freshly
+                // restored record (other device / reinstall) simply has no invoice attached.
+                val localInvoice = db.serviceRecords().firstOrNull { it.sid == doc.id }?.invoicePath ?: ""
+                db.upsertServiceRecord(ServiceRecord(
+                    sid = doc.id, title = doc.getString("title") ?: "",
+                    kind = doc.getString("kind") ?: "company", scheduledKey = doc.getString("scheduledKey") ?: "",
+                    itemSids = itemSids, odometerKm = (doc.getLong("odometerKm") ?: 0L).toInt(),
+                    dateMs = doc.getLong("dateMs") ?: 0L, cost = doc.getDouble("cost") ?: 0.0,
+                    invoicePath = localInvoice, note = doc.getString("note") ?: "")) },
+            remove = { db.deleteServiceRecordBySid(it) })
 
         // Odometer: single doc. Pull if present, else seed the cloud from local.
         regs += u.collection("state").document("bike").addSnapshotListener { snap, _ ->

@@ -104,10 +104,16 @@ class NorthstarDb private constructor(context: Context) :
          * periodic-maintenance chart (km OR months, whichever earlier). Deterministic sids so two
          * devices dedupe on sync, and so upgrades can realign existing rows in place.
          */
-        data class Seed(val sid: String, val name: String, val icon: String, val km: Int, val months: Int)
+        // [aliases] = historical names this seed has had, so a rename can't strand an old row as a
+        // permanent duplicate (the dedupe collapses by sid OR any alias). "Engine oil" was renamed
+        // to "Engine oil & filter".
+        data class Seed(
+            val sid: String, val name: String, val icon: String, val km: Int, val months: Int,
+            val aliases: List<String> = emptyList(),
+        )
         val SEED_ITEMS = listOf(
             Seed("seed-chain",        "Chain clean & lube",   "chain",  500,   0),
-            Seed("seed-oil",          "Engine oil & filter",  "drop",   10000, 12),
+            Seed("seed-oil",          "Engine oil & filter",  "drop",   10000, 12, aliases = listOf("Engine oil")),
             Seed("seed-airfilter",    "Air filter",           "wrench", 10000, 0),
             Seed("seed-brakes",       "Brake pads (front)",   "gauge",  5000,  0),
             Seed("seed-valve",        "Valve clearance",      "wrench", 20000, 0),
@@ -343,37 +349,51 @@ class NorthstarDb private constructor(context: Context) :
      * keepers) so the caller can drop the matching Firestore docs and they don't re-sync.
      * Idempotent: a no-op once the data is canonical.
      */
-    fun dedupeMaintenance(): List<String> {
+    data class DedupeResult(val removedSids: List<String>, val changed: Boolean)
+
+    fun dedupeMaintenance(): DedupeResult {
         val removed = ArrayList<String>()
-        val seedByName = SEED_ITEMS.associateBy { it.name }
+        var changed = false
+        val bySid = SEED_ITEMS.associateBy { it.sid }
+        // current name + every historical alias → seed
+        val byName = HashMap<String, Seed>().apply {
+            for (s in SEED_ITEMS) { put(s.name, s); s.aliases.forEach { put(it, s) } }
+        }
         val wdb = writableDatabase
         wdb.beginTransaction()
         try {
-            val bySeedName = maintenanceItems().filter { seedByName.containsKey(it.name) }.groupBy { it.name }
-            for ((name, group) in bySeedName) {
-                val seed = seedByName.getValue(name)
+            // Group rows by the seed they belong to — resolved by deterministic sid OR by name/alias,
+            // so a renamed row (e.g. "Engine oil") groups with its seed ("Engine oil & filter").
+            val groups = HashMap<String, MutableList<MaintenanceItem>>()
+            for (item in maintenanceItems()) {
+                val seed = bySid[item.sid] ?: byName[item.name] ?: continue
+                groups.getOrPut(seed.sid) { ArrayList() }.add(item)
+            }
+            for ((seedSid, group) in groups) {
+                val seed = bySid.getValue(seedSid)
                 // Keep the row with the most service history; tie-break newest, then lowest id.
-                val keeper = group.maxWith(
-                    compareBy({ it.lastDoneOdoKm }, { it.lastDoneDateMs }, { -it.id })
-                )
+                val keeper = group.maxWith(compareBy({ it.lastDoneOdoKm }, { it.lastDoneDateMs }, { -it.id }))
                 group.filter { it.id != keeper.id }.forEach {
                     wdb.delete("maintenance_item", "id=?", arrayOf(it.id.toString()))
-                    removed.add(it.sid)
+                    removed.add(it.sid); changed = true
                 }
-                if (keeper.sid != seed.sid) {
-                    removed.add(keeper.sid)   // old doc must go from the cloud too
+                // Realign the keeper to the canonical sid + name + icon (fixes an old random sid AND
+                // a stale alias name like "Engine oil").
+                if (keeper.sid != seed.sid || keeper.name != seed.name || keeper.iconKey != seed.icon) {
+                    if (keeper.sid != seed.sid) removed.add(keeper.sid)   // old doc must go from the cloud too
                     wdb.update(
                         "maintenance_item",
-                        ContentValues().apply { put("sid", seed.sid); put("icon_key", seed.icon) },
+                        ContentValues().apply { put("sid", seed.sid); put("name", seed.name); put("icon_key", seed.icon) },
                         "id=?", arrayOf(keeper.id.toString()),
                     )
+                    changed = true
                 }
             }
             wdb.setTransactionSuccessful()
         } finally {
             wdb.endTransaction()
         }
-        return removed
+        return DedupeResult(removed, changed)
     }
 
     // ── Saved destinations ─────────────────────────────────────────────────

@@ -83,6 +83,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     private var encoder: DashEncoder? = null
     private var streamJob: Job? = null
+    // Backstop so a dropped/never-reached connection can't drain the battery forever: if we don't
+    // reach STREAMING within this window, give up completely (stop the Wi‑Fi reconnect loop, the
+    // foreground service, GPS and the encoder). Cancelled the moment streaming starts.
+    private var giveupJob: Job? = null
 
     private var userWantsConnection = false
     private var authAttempts = 0       // bounded auto-retry of the (flaky) auth handshake
@@ -158,6 +162,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val MANUAL_IDLE_MS = 8_000L
         private const val FORCE_REDRAW_MS = 2_000L
+        // How long to keep trying to (re)connect before giving up and freeing all background
+        // resources. Covers the flaky initial handshake AND a mid-ride drop; if the dash is truly
+        // gone (parked / powered off / out of range) we stop draining instead of retrying forever.
+        private const val RECONNECT_GIVEUP_MS = 45_000L
         private const val SMOOTH_TAU = 0.20      // camera smoothing time constant (s) — tighter so the map trails the bike less
         // GPS bearing is only meaningful while genuinely moving; below this it's noise that
         // would spin the heading-up map (the "turns to the opposite direction when I stop" bug).
@@ -260,6 +268,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             session.state.collect { state ->
                 com.example.northstar.data.RideDiagnostics.log("session", "→ $state")
                 refreshStage()
+                // Battery backstop: count down to a full give-up unless/until we're actually
+                // streaming. Reaching STREAMING cancels it; any non-streaming state (re)arms it.
+                if (state == DashState.STREAMING) cancelReconnectGiveup()
+                else if (userWantsConnection) armReconnectGiveup()
                 when (state) {
                     DashState.READY -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0) }; startStream() }
                     DashState.STREAMING -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0, errorMessage = null) } }
@@ -277,17 +289,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                                 session.connect(_ui.value.ssid, wifiManager.network)
                         } else {
                             _ui.update { it.copy(retryAttempt = 0) }
-                            // Retries exhausted while the WiFi link is still up → give up and
-                            // free the background resources. The session stays in ERROR, so the
-                            // Dash screen keeps showing "Couldn't connect" + Try again; only the
-                            // wake/wifi locks, GPS and encoder loop are released.
+                            // Retries exhausted while the WiFi link is still up → give up fully now
+                            // (don't wait out the timer). giveUp() also stops the Wi‑Fi reconnect loop.
                             if (userWantsConnection && authAttempts >= MAX_AUTH_ATTEMPTS &&
                                 wifiManager.state.value.status == WifiConnStatus.CONNECTED
                             ) {
-                                userWantsConnection = false
-                                releaseBackgroundResources()
-                                com.example.northstar.data.RideDiagnostics.log("error", "auth exhausted after $authAttempts attempts — giving up")
-                                com.example.northstar.data.RideDiagnostics.stop("auth exhausted")
+                                giveUp("auth exhausted after $authAttempts attempts")
                             }
                         }
                     }
@@ -384,6 +391,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnect() {
         userWantsConnection = false
+        cancelReconnectGiveup()
         com.example.northstar.data.RideDiagnostics.log("connect", "user disconnect")
         stopRecording()        // a connect→disconnect session = one saved ride
         session.disconnect()
@@ -408,6 +416,34 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         location.stop()                              // stop GPS updates
         DashKeepAliveService.stop(getApplication())  // release wake + wifi locks
     }
+
+    /**
+     * Complete stop of all background work — including the Wi‑Fi manager's reconnect loop, which
+     * [releaseBackgroundResources] alone does NOT stop (that loop re-joins the dash AP every few
+     * seconds and was the main source of drain after the dash went away). The session stays in
+     * ERROR so the Dash screen still shows "Couldn't connect" + Try again.
+     */
+    private fun giveUp(reason: String) {
+        cancelReconnectGiveup()
+        userWantsConnection = false
+        session.disconnect()
+        wifiManager.disconnect()       // stops the indefinite AP reconnect loop
+        releaseBackgroundResources()
+        refreshStage()
+        com.example.northstar.data.RideDiagnostics.log("error", "gave up: $reason — background released")
+        com.example.northstar.data.RideDiagnostics.stop(reason)
+    }
+
+    /** Start the give-up countdown if it isn't already running (idempotent). */
+    private fun armReconnectGiveup() {
+        if (giveupJob?.isActive == true) return
+        giveupJob = viewModelScope.launch {
+            delay(RECONNECT_GIVEUP_MS)
+            if (session.state.value != DashState.STREAMING) giveUp("reconnect window elapsed")
+        }
+    }
+
+    private fun cancelReconnectGiveup() { giveupJob?.cancel(); giveupJob = null }
 
     // ── Ride recording (the connected session) ───────────────────────────────
     private fun startRecording() {

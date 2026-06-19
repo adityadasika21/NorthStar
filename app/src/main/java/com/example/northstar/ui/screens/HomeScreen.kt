@@ -16,10 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.northstar.BuildConfig
+import com.example.northstar.util.BuildId
 import com.example.northstar.ui.NorthstarIcons
 import com.example.northstar.ui.components.*
 import com.example.northstar.ui.theme.*
@@ -59,6 +62,40 @@ fun HomeScreen(
             wordmark = true,
             trailing = { NorthstarIconBtn(NorthstarIcons.Gear, onClick = { onNavigate("settings") }) },
         )
+
+        // Prominent build identity (debug/test only) — the same sha12 checksum that pull-diag and
+        // the "New test build" prompt use, so there's never any doubt which build is installed.
+        if (BuildConfig.DEBUG) {
+            val ctx = LocalContext.current
+            val buildSha = remember { BuildId.sha12(ctx) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Gold.copy(alpha = 0.10f))
+                    .border(1.dp, Gold.copy(alpha = 0.40f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    "TEST BUILD",
+                    color = Gold, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = GeistMonoFamily, letterSpacing = 0.1.sp,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    buildSha,
+                    color = TextHi, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    fontFamily = GeistMonoFamily,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    color = TextLo, fontSize = 11.sp, fontFamily = GeistMonoFamily,
+                )
+            }
+        }
 
         // Connection hero card
         NorthstarCard(

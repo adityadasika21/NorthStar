@@ -92,6 +92,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     private var encoder: DashEncoder? = null
     private var streamJob: Job? = null
+    // Even presentation clock (ms) feeding the RTP 90 kHz timestamp — advances by exactly one
+    // frame interval per encoded frame so the dash gets an evenly-spaced timeline (NOT wall clock,
+    // which inherited the loop's jitter). Paired with absolute-grid send pacing below.
+    @Volatile private var videoPtsMs = 0L
+    private var sendPaceMs = 0.0    // EMA of the real frame-send interval — exposes cadence jitter
+    private var sendPaceMaxMs = 0L  // worst interval since the last diag line
     // Backstop so a dropped/never-reached connection can't drain the battery forever: if we don't
     // reach STREAMING within this window, give up completely (stop the Wi‑Fi reconnect loop, the
     // foreground service, GPS and the encoder). Cancelled the moment streaming starts.
@@ -597,9 +603,13 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun startStream() {
         com.example.northstar.data.RideDiagnostics.log("stream", "startStream — encoder up, RTP→dash beginning")
+        videoPtsMs = 0L
         val packetizer = RtpPacketizer { rtpPkt -> session.sendRtp(rtpPkt) }
         val nalProc    = NalProcessor { nal, _ ->
-            packetizer.packetize(nal, endOfAU = true, wallClockMs = System.currentTimeMillis())
+            // Even, monotonic presentation timestamp (set per frame by the send loop) instead of
+            // wall clock — so the dash sees a clean, evenly-spaced timeline regardless of tiny
+            // send-time wobble. All NALs of one frame share the same value.
+            packetizer.packetize(nal, endOfAU = true, wallClockMs = videoPtsMs)
         }
         val onEncoded: (ByteArray, Boolean) -> Unit = { annexB, isKey ->
             nalProc.process(annexB)
@@ -627,23 +637,39 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         streamJob = viewModelScope.launch(Dispatchers.Default) {
             var lastPrefetch = 0L
             var failures = 0
+            // Absolute-grid pacing: aim each frame at start + n·interval and sleep only the
+            // REMAINDER, instead of a fixed delay tacked onto variable render work. That work used
+            // to ride on top of the delay, so the cadence wobbled (and the net rate fell to ~15 fps)
+            // — uneven arrival is exactly what makes the dash decoder jitter/teleport. Now the
+            // interval is constant as long as work fits inside it; an occasional overrun re-syncs to
+            // the grid without bursting catch-up frames.
+            val frameMs = 1000L / FPS
+            var nextFrameMs = System.currentTimeMillis()
+            var lastSendMs = System.currentTimeMillis()
             // The loop must NEVER die silently: the session's heartbeats keep the dash
             // connected, so a dead frame loop = frozen map with the connection "up".
             while (isActive && session.state.value == DashState.STREAMING) {
                 try {
                     tick()
-                    // Push the (possibly cached) frame to the encoder at a steady 4 fps.
                     val bmp = frameBitmap
                     val enc = encoder
                     if (bmp != null && enc != null) {
                         enc.renderFrame { canvas -> canvas.drawBitmap(bmp, 0f, 0f, null) }
+                        // Advance the even presentation clock by one frame BEFORE draining, so the
+                        // frame(s) pulled this iteration carry an evenly-spaced RTP timestamp.
+                        videoPtsMs += frameMs
                         enc.drain()
                     }
                     failures = 0
+                    // Track the real send cadence (EMA + worst) so the ride log proves it's even.
+                    val sendNow = System.currentTimeMillis()
+                    val gap = sendNow - lastSendMs
+                    lastSendMs = sendNow
+                    sendPaceMs = if (sendPaceMs <= 0.0) gap.toDouble() else sendPaceMs + (gap - sendPaceMs) * 0.1
+                    if (gap > sendPaceMaxMs) sendPaceMaxMs = gap
                     // Warm the tile cache ahead of the rider every ~20 s.
-                    val now = System.currentTimeMillis()
-                    if (now - lastPrefetch > 20_000) {
-                        lastPrefetch = now
+                    if (sendNow - lastPrefetch > 20_000) {
+                        lastPrefetch = sendNow
                         location.location.value?.let { tiles.prefetch(it.latitude, it.longitude) }
                     }
                 } catch (e: CancellationException) {
@@ -663,9 +689,16 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                         failures = 0
                     }
                 }
-                // Dynamic pacing: buttery while moving, throttled when stopped (power).
-                // Constant 4 fps — matches the dash decoder + the 4 Hz projection keep-alive.
-                delay(1000L / FPS)
+                // Sleep only the remaining time to the next grid point.
+                nextFrameMs += frameMs
+                val sleepMs = nextFrameMs - System.currentTimeMillis()
+                if (sleepMs > 1) {
+                    delay(sleepMs)
+                } else if (sleepMs < -frameMs) {
+                    // Fell more than a frame behind (render spike) — re-anchor so we don't fire a
+                    // burst of catch-up frames (which would itself look like a jump).
+                    nextFrameMs = System.currentTimeMillis()
+                }
             }
         }
     }
@@ -798,9 +831,11 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 "gps=" + (loc?.let { "acc=%.0fm spd=%.1fm/s".format(it.accuracy, it.speed) } ?: "none") +
                     " fixGap=%.0fms".format(gpsFixIntervalMs) +
                     " frames=${_ui.value.frameCount} thermal=${_ui.value.thermal}" +
+                    " pace=%.0fms/max=%dms".format(sendPaceMs, sendPaceMaxMs) +  // frame-send cadence (even ≈ 1000/FPS)
                     " remaining=" + (remainingM?.let { "%.1fkm".format(it / 1000.0) } ?: "-") +
                     " offRoute=$offRoute",
             )
+            sendPaceMaxMs = 0L  // reset the worst-case window each diag line
         }
 
         // ── Predictive, framerate-independent camera (CarPlay-smooth) ──

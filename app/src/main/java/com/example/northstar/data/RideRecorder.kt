@@ -62,6 +62,10 @@ class RideRecorder {
         if (points.size < 2 || distanceM < MIN_RIDE_M) return null
         val avg = if (durationS > 0) distanceM / durationS else 0.0
         val first = points.first(); val lastPt = points.last()
+        // Usage: a real ride was recorded — how far/long riders actually go.
+        com.example.northstar.util.Telemetry.logEvent(
+            "ride_recorded", "distance_km" to distanceM / 1000.0, "duration_min" to durationS / 60.0,
+        )
         return Ride(
             sid = NorthstarDb.newSid(),
             startMs = startMs, endMs = end,

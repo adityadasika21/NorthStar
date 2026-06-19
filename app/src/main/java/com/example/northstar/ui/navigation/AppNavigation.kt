@@ -66,6 +66,13 @@ fun AppNavigation(
     val currentRoute = navBackStackEntry?.destination?.route
     val ctx = androidx.compose.ui.platform.LocalContext.current
 
+    // Analytics screen_view per destination. A single-Activity Compose app doesn't auto-log these,
+    // so feed each nav route to Analytics — that's what makes per-feature usage (and time spent on
+    // each screen) visible. No-op when Firebase isn't configured.
+    LaunchedEffect(currentRoute) {
+        currentRoute?.let { com.example.northstar.util.Telemetry.logScreen(it) }
+    }
+
     // Skip the login screen on every cold start once the rider has passed it (signed in OR chose
     // "continue locally"); cleared on sign-out so it returns. Remembered once, read here.
     val startDest = remember {

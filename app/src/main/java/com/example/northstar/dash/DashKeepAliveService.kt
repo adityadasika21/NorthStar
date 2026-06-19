@@ -96,6 +96,8 @@ class DashKeepAliveService : Service() {
             // wake/wifi locks (screen-off resilience), which the rider can recover
             // from the Dash screen once permissions are granted.
             Log.e(TAG, "Foreground service start failed — continuing without locks", e)
+            // Trace it: this is exactly the OEM/Android-14 FGS path that used to crash silently.
+            com.example.northstar.util.Telemetry.recordNonFatal(e, "DashKeepAliveService.startForegroundLocks")
             stopSelf()
         }
     }

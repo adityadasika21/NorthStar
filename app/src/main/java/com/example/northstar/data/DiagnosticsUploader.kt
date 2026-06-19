@@ -36,9 +36,15 @@ object DiagnosticsUploader {
 
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Upload any not-yet-sent session logs. Safe to call on every app start. */
+    /**
+     * Upload any not-yet-sent logs. Safe to call on every app start.
+     *
+     * Crash traces (`crash-*.log`) upload whenever Firebase is configured — even on public
+     * releases — so a crash on anyone's phone is never untraced: it reaches both Crashlytics
+     * and the `diagnostics` collection the dev loop can actually read. Ride logs (`ride-*.log`)
+     * stay test-channel only ([BuildConfig.DIAG_UPLOAD] off in release).
+     */
     fun uploadPending(context: Context) {
-        if (!BuildConfig.DIAG_UPLOAD) return
         if (!FirebaseGate.isConfigured(context)) return
         io.launch { runCatching { upload(context.applicationContext) }
             .onFailure { Log.w(TAG, "diag upload failed: ${it.message}") } }
@@ -46,14 +52,18 @@ object DiagnosticsUploader {
 
     private suspend fun upload(context: Context) {
         val dir = File(context.getExternalFilesDir(null), "diag")
-        val logs = dir.listFiles { f -> f.name.startsWith("ride-") && f.name.endsWith(".log") }
-            ?.sortedBy { it.lastModified() } ?: return
+        // Crash traces always; ride logs only on the test channel.
+        val logs = dir.listFiles { f ->
+            f.name.endsWith(".log") &&
+                (f.name.startsWith("crash-") || (BuildConfig.DIAG_UPLOAD && f.name.startsWith("ride-")))
+        }?.sortedBy { it.lastModified() } ?: return
         if (logs.isEmpty()) return
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val done = prefs.getStringSet(KEY_DONE, emptySet())!!.toMutableSet()
-        // Don't re-upload the live session file (it's still being written to).
-        val openFile = logs.maxByOrNull { it.lastModified() }
+        // Don't re-upload the live ride file (still being appended to). Crash files are
+        // written once at death, so they're always eligible.
+        val openFile = logs.filter { it.name.startsWith("ride-") }.maxByOrNull { it.lastModified() }
         val fs = FirebaseFirestore.getInstance()
         val deviceId = DeviceId.get(context)
 
@@ -62,7 +72,10 @@ object DiagnosticsUploader {
             if (f === openFile && System.currentTimeMillis() - f.lastModified() < 60_000) continue
             val text = runCatching { f.readText() }.getOrNull() ?: continue
             val content = if (text.length > MAX_CONTENT) text.takeLast(MAX_CONTENT) else text
+            val isCrash = f.name.startsWith("crash-")
             val doc = mapOf(
+                "kind" to if (isCrash) "crash" else "ride",
+                "exception" to if (isCrash) crashSummary(content) else null,
                 "deviceId" to deviceId,
                 "manufacturer" to Build.MANUFACTURER,
                 "model" to Build.MODEL,
@@ -88,4 +101,12 @@ object DiagnosticsUploader {
             }
         }
     }
+
+    /** One-line "exception=..." summary pulled from a crash log, for at-a-glance scanning. */
+    private fun crashSummary(content: String): String =
+        content.lineSequence()
+            .firstOrNull { it.startsWith("exception=") }
+            ?.removePrefix("exception=")
+            ?.take(300)
+            .orEmpty()
 }

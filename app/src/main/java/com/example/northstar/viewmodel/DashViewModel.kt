@@ -274,7 +274,11 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 else if (userWantsConnection) armReconnectGiveup()
                 when (state) {
                     DashState.READY -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0) }; startStream() }
-                    DashState.STREAMING -> { authAttempts = 0; _ui.update { it.copy(retryAttempt = 0, errorMessage = null) } }
+                    DashState.STREAMING -> {
+                        authAttempts = 0; _ui.update { it.copy(retryAttempt = 0, errorMessage = null) }
+                        // Usage: the dash actually started showing the map — the core feature working.
+                        com.example.northstar.util.Telemetry.logEvent("dash_streaming")
+                    }
                     // The handshake to fw 11.63 is flaky — a single failed attempt is normal.
                     // Auto-retry (WiFi is already up) instead of making the rider re-tap Connect.
                     DashState.ERROR -> {

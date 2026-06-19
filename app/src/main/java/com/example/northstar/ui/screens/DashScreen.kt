@@ -177,6 +177,12 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
             title = "Dash view",
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (streaming && ui.gpsStatus != com.example.northstar.viewmodel.GpsStatus.GOOD) {
+                        NorthstarChip(
+                            if (ui.gpsStatus == com.example.northstar.viewmodel.GpsStatus.LOST) "GPS lost" else "GPS weak",
+                            if (ui.gpsStatus == com.example.northstar.viewmodel.GpsStatus.LOST) ChipTone.Alert else ChipTone.Warn,
+                        )
+                    }
                     if (streaming && ui.thermal != "OK") {
                         NorthstarChip(
                             ui.thermal,

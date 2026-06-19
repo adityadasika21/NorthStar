@@ -64,24 +64,30 @@ fun NorthstarMap(
     // textureMode → render into a TextureView, not a SurfaceView. A SurfaceView is a
     // separate window that doesn't clip/animate with Compose navigation, so the old map
     // lingers on screen during the transition; a TextureView composes normally.
-    val mapView = remember { MapView(context, MapLibreMapOptions().textureMode(true)) }
+    // onCreate(null) runs HERE, exactly once at construction — NOT via the lifecycle observer.
+    // Routing it through the observer let onStart/onResume dispatch before onCreate, and pairing
+    // an observer ON_DESTROY with the onDispose teardown destroyed the native MapView TWICE — a
+    // use-after-free that SIGSEGVs when navigating quickly between map screens (Dash↔Route↔Home).
+    val mapView = remember {
+        MapView(context, MapLibreMapOptions().textureMode(true)).apply { onCreate(null) }
+    }
 
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var lineMgr by remember { mutableStateOf<LineManager?>(null) }
     var symbolMgr by remember { mutableStateOf<SymbolManager?>(null) }
     var styleReady by remember { mutableStateOf(false) }
 
-    // Bind the MapView to the composition lifecycle.
+    // Bind the MapView to the composition lifecycle. Only start/resume/pause/stop go through the
+    // observer; create happened at construction and destroy happens ONCE in onDispose — never via
+    // the observer, so the native MapView is freed exactly once.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, e ->
             when (e) {
-                Lifecycle.Event.ON_CREATE  -> mapView.onCreate(null)
                 Lifecycle.Event.ON_START   -> mapView.onStart()
                 Lifecycle.Event.ON_RESUME  -> mapView.onResume()
                 Lifecycle.Event.ON_PAUSE   -> mapView.onPause()
                 Lifecycle.Event.ON_STOP    -> mapView.onStop()
-                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
                 else -> {}
             }
         }
@@ -89,7 +95,9 @@ fun NorthstarMap(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(obs)
             lineMgr?.onDestroy(); symbolMgr?.onDestroy()
-            mapView.onDestroy()
+            // Single, ordered teardown of the native MapView.
+            runCatching { mapView.onStop() }
+            runCatching { mapView.onDestroy() }
         }
     }
 

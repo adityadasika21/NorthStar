@@ -124,6 +124,9 @@ dependencies {
     // ⇒ default FirebaseApp never initializes ⇒ these are dormant and the app runs fully local).
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
+    // NDK crash capture — JVM CrashGuard can't see native SIGSEGVs (MapLibre/MediaCodec); this
+    // routes them to the Crashlytics console so a native crash is no longer completely untraced.
+    implementation(libs.firebase.crashlytics.ndk)
     implementation(libs.firebase.perf)
     implementation(libs.firebase.config)
     implementation(libs.firebase.messaging)

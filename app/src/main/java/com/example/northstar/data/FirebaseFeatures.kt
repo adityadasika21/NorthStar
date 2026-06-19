@@ -3,6 +3,8 @@ package com.example.northstar.data
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.util.Log
+import com.example.northstar.BuildConfig
+import com.example.northstar.util.DeviceId
 import com.google.firebase.Firebase
 import com.google.firebase.analytics.analytics
 import com.google.firebase.appcheck.appCheck
@@ -46,8 +48,8 @@ object FirebaseFeatures {
         val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
         initAppCheck(context, debuggable)
-        initCrashlytics(debuggable)
-        initAnalytics()
+        initCrashlytics(context, debuggable)
+        initAnalytics(context, debuggable)
         initPerformance()
         initRemoteConfig(debuggable)
     }
@@ -73,16 +75,27 @@ object FirebaseFeatures {
         }
     }.onFailure { Log.w(TAG, "App Check init failed", it) }
 
-    private fun initCrashlytics(debuggable: Boolean) = runCatching {
-        // Collect crashes everywhere; tag the build flavour so debug noise is filterable.
+    private fun initCrashlytics(context: Context, debuggable: Boolean) = runCatching {
+        // Collect crashes everywhere; tag the build flavour so debug noise is filterable, and key
+        // the user to the diagnostics deviceId so a crash maps to a pull-diag device.
         Firebase.crashlytics.apply {
             setCrashlyticsCollectionEnabled(true)
             setCustomKey("build_debuggable", debuggable)
+            setUserId(DeviceId.get(context))
         }
     }.onFailure { Log.w(TAG, "Crashlytics init failed", it) }
 
-    private fun initAnalytics() = runCatching {
-        Firebase.analytics.setAnalyticsCollectionEnabled(true)
+    private fun initAnalytics(context: Context, debuggable: Boolean) = runCatching {
+        Firebase.analytics.apply {
+            setAnalyticsCollectionEnabled(true)
+            // Debug and release share one Analytics property (same applicationId), so DAU/usage
+            // mixes my test installs with real users' release installs. These user properties make
+            // every metric splittable: build_type debug|release, app_channel test|prod. ns_device_id
+            // ties an Analytics user back to the pull-diag deviceId for cross-checking.
+            setUserProperty("build_type", if (debuggable) "debug" else "release")
+            setUserProperty("app_channel", if (BuildConfig.DIAG_UPLOAD) "test" else "prod")
+            setUserProperty("ns_device_id", DeviceId.get(context))
+        }
     }.onFailure { Log.w(TAG, "Analytics init failed", it) }
 
     private fun initPerformance() = runCatching {

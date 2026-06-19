@@ -162,6 +162,10 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var rerouting = false
     // Debounce for the "Recalculating" state (ignore 1-frame off-route GPS blips).
     @Volatile private var offRouteStreakStart = 0L
+    // Keep "Recalculating" on screen a beat after it clears, so a fast reroute is still seen.
+    @Volatile private var recalcHoldUntil = 0L
+    // Last lateral distance from the route (m) — logged so flyover/off-route thresholds are tunable.
+    @Volatile private var lastSnapDist = -1.0
     // Rolling average of actual moving speed (m/s), held through stops — drives a STEADY ETA
     // instead of one that swings with instantaneous speed at every brake/light.
     private var smoothSpeedMps = 0.0
@@ -737,23 +741,38 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         if (r != null && loc != null) {
             val ns = trackProgress(r, GeoPoint(loc.latitude, loc.longitude))
             remainingM = ns.remainingM
-            offRoute = ns.offRoute
+            // Heading-aware off-route. A flyover (or its service road) runs PARALLEL to and almost
+            // on top of the route, so flat GPS can sit well past the lateral threshold while the
+            // rider is still effectively on the line. Distance alone then cries "off-route" and
+            // triggers a sudden reroute. So in the ambiguous band we require the heading to ALSO
+            // disagree (a genuine divergence / wrong turn); a clearly different road (very far) is
+            // off-route regardless. This is the main flyover-confusion mitigation.
+            lastSnapDist = ns.snapDist
+            val headingKnown = loc.hasBearing() && loc.speed >= BEARING_MIN_SPEED
+            val headingOff = headingKnown && angleDelta(loc.bearing, ns.heading) > 50f
+            offRoute = when {
+                ns.snapDist > 150.0 -> true       // unmistakably a different road → off regardless
+                ns.snapDist > 70.0  -> headingOff // parallel/flyover band: off ONLY if heading diverges
+                else -> false                     // (stopped here → not off-route; decide once moving)
+            }
             // NOTE: no marker snapping. Raw GPS is accurate; snapping to the route
             // polyline pinned the rider onto a parallel road in dense areas (showed
             // "Indira Enclave" when actually at "Isha"). trackProgress is still used
-            // for nav distances + off-route/reroute detection (ns.offRoute), just not
-            // to move the displayed marker.
+            // for nav distances + off-route/reroute detection, just not to move the marker.
             // (Heading is handled above — held steady at low speed, not snapped to the route
             // segment, so a stop doesn't rotate the map.)
             val nowMs = System.currentTimeMillis()
 
-            // "Recalculating" = off the line for >1.2 s (ignores a 1-frame GPS blip), OR a reroute
+            // "Recalculating" = off the line for >0.8 s (ignores a 1-frame GPS blip), OR a reroute
             // request is in flight. While true the distance is measured against a route we've left,
             // so the ETA is meaningless — we FREEZE it (and the pill says "Recalculating") rather
-            // than let the number lurch until the fresh route lands.
+            // than let the number lurch until the fresh route lands. recalcHoldUntil keeps the pill
+            // up a beat after the new route lands so a fast reroute is still visible to the rider.
             if (offRoute) { if (offRouteStreakStart == 0L) offRouteStreakStart = nowMs }
             else offRouteStreakStart = 0L
-            recalculating = rerouting || (offRouteStreakStart != 0L && nowMs - offRouteStreakStart > 1_200)
+            val rawRecalc = rerouting || (offRouteStreakStart != 0L && nowMs - offRouteStreakStart > 800)
+            if (rawRecalc) recalcHoldUntil = nowMs + 1_500
+            recalculating = rawRecalc || nowMs < recalcHoldUntil
 
             if (!recalculating) {
                 // Steady ETA: divide remaining distance by a ROLLING AVERAGE speed (held through
@@ -833,7 +852,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                     " frames=${_ui.value.frameCount} thermal=${_ui.value.thermal}" +
                     " pace=%.0fms/max=%dms".format(sendPaceMs, sendPaceMaxMs) +  // frame-send cadence (even ≈ 1000/FPS)
                     " remaining=" + (remainingM?.let { "%.1fkm".format(it / 1000.0) } ?: "-") +
-                    " offRoute=$offRoute",
+                    " offRoute=$offRoute" +
+                    (if (lastSnapDist >= 0) " snap=%.0fm".format(lastSnapDist) else ""),
             )
             sendPaceMaxMs = 0L  // reset the worst-case window each diag line
         }
@@ -1113,6 +1133,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun fmtDist(m: Double): String =
         if (m < 1000) "${m.toInt()} m" else "%.1f km".format(m / 1000.0)
+
+    /** Smallest absolute angle (0..180°) between two compass bearings. */
+    private fun angleDelta(a: Float, b: Float): Float {
+        val d = (((a - b) % 360f) + 540f) % 360f - 180f
+        return kotlin.math.abs(d)
+    }
 
     private fun teardown() {
         streamJob?.cancel(); streamJob = null

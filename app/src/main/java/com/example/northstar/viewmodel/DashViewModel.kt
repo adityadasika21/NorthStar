@@ -29,6 +29,14 @@ import kotlinx.coroutines.flow.update
 
 enum class ConnStage { OFFLINE, WIFI, AUTH, STREAMING, ERROR }
 
+/**
+ * GPS health shown to the rider so a bad signal degrades *visibly* instead of the marker just
+ * freezing. GOOD = fresh, accurate. WEAK = fresh but imprecise (or fixes coming slowly) → the
+ * map eases gently toward truth, no jitter. LOST = no fresh fix for a few seconds → marker holds
+ * its last known spot and the dash says so.
+ */
+enum class GpsStatus { GOOD, WEAK, LOST }
+
 data class DashUiState(
     val stage: ConnStage = ConnStage.OFFLINE,
     val frameCount: Int = 0,
@@ -43,6 +51,7 @@ data class DashUiState(
     val etaMinutes: Int? = null,
     val maneuver: String? = null,
     val hasGps: Boolean = false,
+    val gpsStatus: GpsStatus = GpsStatus.LOST,
     val hasRoute: Boolean = false,
     val offRoute: Boolean = false,
     val recalculating: Boolean = false, // off-route long enough / actively rerouting → ETA frozen, pill shows "Recalculating"
@@ -119,6 +128,12 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
     private var fixWallMs = 0L
     private var lastFixTime = 0L
     private var gpsFixIntervalMs = 0.0   // EMA of the gap between fixes — exposes screen-off GPS throttling
+
+    // GPS health surfaced to the dash + phone (computed each tick from accuracy + fix age).
+    @Volatile private var gpsStatus = GpsStatus.LOST
+    // Held marker position while stationary — deadbands sub-accuracy GPS wander so a parked bike's
+    // dot doesn't drift/jitter. Updated to the live fix while moving; reset on teardown.
+    private var heldRider: Pair<Double, Double>? = null
 
     // Smoothed rider position shown on the dash frame (locked to the camera centre so the
     // marker stays put and the map slides under it). null = no GPS.
@@ -604,7 +619,7 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         frameBitmap = Bitmap.createBitmap(DashEncoder.WIDTH, DashEncoder.HEIGHT, Bitmap.Config.ARGB_8888)
         lastSignature = ""
         // Fresh camera so it snaps to the first fix instead of gliding from a stale spot.
-        camInit = false; lastTickNs = 0L; lastFixTime = 0L
+        camInit = false; lastTickNs = 0L; lastFixTime = 0L; heldRider = null
 
         session.startStreaming()
         location.location.value?.let { tiles.prefetch(it.latitude, it.longitude) }
@@ -748,9 +763,19 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
         // Recompute the route if the rider has clearly left it for a few seconds.
         maybeReroute(offRoute, loc)
 
+        // GPS health: LOST if no fresh fix for a few seconds (or none at all), WEAK if the fix is
+        // imprecise or coming in slowly, else GOOD. Drives the on-dash indicator and marker colour.
+        val fixAgeMs = if (fixWallMs > 0L) System.currentTimeMillis() - fixWallMs else Long.MAX_VALUE
+        gpsStatus = when {
+            loc == null || fixAgeMs > 4_000 -> GpsStatus.LOST
+            loc.accuracy > 25f || gpsFixIntervalMs > 2_500 -> GpsStatus.WEAK
+            else -> GpsStatus.GOOD
+        }
+
         // Publish nav figures to the phone UI.
         _ui.update { it.copy(
             hasGps = loc != null,
+            gpsStatus = gpsStatus,
             riderLat = matchedLat,
             riderLng = matchedLng,
             riderBearing = heading,
@@ -815,9 +840,23 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
                 // (heavily smoothed) toward the raw fix instead of dead-reckoning off a bad vector.
                 val conf = ((40f - (loc.accuracy)) / 28f).toDouble().coerceIn(0.0, 1.0)
                 val dist = predictedDistance(fixSpeed, elapsed + DISPLAY_LEAD_S) * conf
+                // Remember where the bike actually is, so that when it stops the marker holds the
+                // real fix (not the lead-projected point ahead of it).
+                heldRider = fixLat to fixLng
                 project(fixLat, fixLng, fixBearing.toDouble(), dist)
             }
-            else -> matchedLat!! to matchedLng!!
+            else -> {
+                // Stopped: hold position and IGNORE sub-accuracy GPS wander, so a parked bike's dot
+                // doesn't drift or jitter. Only move the held point if the fix steps clearly outside
+                // its own error radius (i.e. the bike really moved a little / GPS re-converged).
+                val cand = matchedLat!! to matchedLng!!
+                val h = heldRider
+                val band = loc.accuracy.coerceIn(8f, 30f).toDouble()
+                if (h == null || GeoPoint.distMeters(
+                        GeoPoint(h.first, h.second), GeoPoint(cand.first, cand.second)
+                    ) > band
+                ) { heldRider = cand; cand } else h
+            }
         }
 
         val haveTarget = rider != null || (dLat != null && dLng != null)
@@ -961,6 +1000,8 @@ class DashViewModel(app: Application) : AndroidViewModel(app) {
             tilt3d = false,
             etaPrimary = etaPrimary,
             etaSecondary = etaSecondary,
+            gpsWeak = gpsStatus == GpsStatus.WEAK,
+            gpsLost = gpsStatus == GpsStatus.LOST,
         )
         mapRenderer.draw(Canvas(bmp), frame)
         // Publish a snapshot for the in-app preview (immutable copy — see _previewFrame).

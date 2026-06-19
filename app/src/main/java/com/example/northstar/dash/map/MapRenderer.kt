@@ -40,6 +40,8 @@ class MapRenderer(private val tiles: TileProvider) {
         val tilt3d: Boolean = false,       // perspective 3D view (nav heading-up only)
         val etaPrimary: String? = null,    // big glance value, e.g. "24 min" (nav only)
         val etaSecondary: String? = null,  // smaller line, e.g. "18 km · 13:32"
+        val gpsWeak: Boolean = false,      // imprecise/slow fix → amber marker + "GPS weak" pill
+        val gpsLost: Boolean = false,      // no fresh fix → grey marker + "GPS lost" pill
     )
 
     private val bgColor   = Color.rgb(229, 227, 223) // Google Maps land colour, behind missing tiles
@@ -71,6 +73,8 @@ class MapRenderer(private val tiles: TileProvider) {
     private val etaBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(46, 255, 255, 255); style = Paint.Style.STROKE; strokeWidth = 1.5f }
     private val etaBigPaint    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(126, 217, 87); textSize = 20f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }   // Google-nav green
     private val etaSmallPaint  = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(196, 201, 208); textSize = 12f; textAlign = Paint.Align.CENTER }
+    // GPS-health pill (top-centre, shown only when the signal is weak/lost)
+    private val gpsPillText    = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 13f; isFakeBoldText = true; textAlign = Paint.Align.CENTER }
 
     // Reused across frames
     private val routePath = Path()
@@ -158,12 +162,18 @@ class MapRenderer(private val tiles: TileProvider) {
             dotPaint.color = Color.WHITE; canvas.drawCircle(dx, dy, 3.5f, dotPaint)
         }
 
-        // ── Rider marker (Google blue) ──
+        // ── Rider marker — colour tracks GPS health (blue good, amber weak, grey lost) ──
         if (f.riderLat != null && f.riderLng != null) {
             val rx = sx(f.riderLng); val ry = sy(f.riderLat)
-            dotPaint.color = Color.argb(60, 66, 133, 244); canvas.drawCircle(rx, ry, 17f, dotPaint)
+            val markerColor = when {
+                f.gpsLost -> Color.rgb(150, 154, 160)  // grey: position is stale
+                f.gpsWeak -> Color.rgb(251, 188, 5)    // amber: imprecise
+                else      -> routeBlue                  // blue: good
+            }
+            val haloColor = Color.argb(60, Color.red(markerColor), Color.green(markerColor), Color.blue(markerColor))
+            dotPaint.color = haloColor; canvas.drawCircle(rx, ry, 17f, dotPaint)
             if (rotate) {
-                // Heading-up: blue chevron pointing up (travel direction)
+                // Heading-up: chevron pointing up (travel direction)
                 riderPath.reset()
                 riderPath.moveTo(rx, ry - 11f)
                 riderPath.lineTo(rx - 7f, ry + 7f)
@@ -171,11 +181,11 @@ class MapRenderer(private val tiles: TileProvider) {
                 riderPath.close()
                 canvas.save(); canvas.rotate(f.heading, rx, ry)
                 dotPaint.color = Color.WHITE; canvas.drawCircle(rx, ry, 9f, dotPaint)
-                dotPaint.color = routeBlue; canvas.drawPath(riderPath, dotPaint)
+                dotPaint.color = markerColor; canvas.drawPath(riderPath, dotPaint)
                 canvas.restore()
             } else {
                 dotPaint.color = Color.WHITE; canvas.drawCircle(rx, ry, 8f, dotPaint)
-                dotPaint.color = routeBlue; canvas.drawCircle(rx, ry, 5.5f, dotPaint)
+                dotPaint.color = markerColor; canvas.drawCircle(rx, ry, 5.5f, dotPaint)
             }
         }
 
@@ -207,6 +217,25 @@ class MapRenderer(private val tiles: TileProvider) {
                 baseline += bigFm.descent + gap - smallFm.ascent
                 canvas.drawText(secondary, cxp, baseline, etaSmallPaint)
             }
+        }
+
+        // ── GPS-health pill (top-centre safe zone) — only when degraded, so the rider knows the
+        // marker is imprecise/held rather than wondering why the map stopped tracking ──
+        if (f.gpsLost || f.gpsWeak) {
+            val label = if (f.gpsLost) "GPS lost" else "GPS weak"
+            gpsPillText.color = if (f.gpsLost) googleRed else Color.rgb(251, 188, 5)
+            val padH = 14f; val padV = 6f
+            val fm = gpsPillText.fontMetrics
+            val textH = fm.descent - fm.ascent
+            val pillW = gpsPillText.measureText(label) + padH * 2
+            val cxp = w / 2f
+            val top = 14f
+            val bottom = top + padV * 2 + textH
+            pillRect.set(cxp - pillW / 2f, top, cxp + pillW / 2f, bottom)
+            val r = (bottom - top) / 2f
+            canvas.drawRoundRect(pillRect, r, r, etaBgPaint)
+            canvas.drawRoundRect(pillRect, r, r, etaBorderPaint)
+            canvas.drawText(label, cxp, top + padV - fm.ascent, gpsPillText)
         }
 
         // No other on-map text overlays — the dash's own widgets show name/turn, and the

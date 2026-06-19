@@ -73,6 +73,19 @@ fun AppNavigation(
         currentRoute?.let { com.example.northstar.util.Telemetry.logScreen(it) }
     }
 
+    // Navigate to a top-level destination with ONE consistent pattern — whether the tap came from
+    // the bottom bar or a Home-screen button. The Home button used to do a plain navigate() while
+    // the bottom bar used saveState/restoreState; mixing them corrupted the back stack so that,
+    // after opening Dash from the Home button, tapping Home did nothing (target == start
+    // destination + a restoreState mismatch). Routing both through this fixes it.
+    fun navigateTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     // Skip the login screen on every cold start once the rider has passed it (signed in OR chose
     // "continue locally"); cleared on sign-out so it returns. Remembered once, read here.
     val startDest = remember {
@@ -151,9 +164,12 @@ fun AppNavigation(
                         conn = conn,
                         onNavigate = { dest ->
                             when (dest) {
-                                "route" -> navController.navigate(Screen.Route.route)
-                                "dash" -> navController.navigate(Screen.Dash.route)
-                                "garage" -> navController.navigate(Screen.Garage.route)
+                                // Top-level destinations go through the shared tab navigation so the
+                                // back stack stays consistent with the bottom bar (see navigateTab).
+                                "route" -> navigateTab(Screen.Route.route)
+                                "dash" -> navigateTab(Screen.Dash.route)
+                                "garage" -> navigateTab(Screen.Garage.route)
+                                // Settings is a detail screen (its own back), not a tab.
                                 "settings" -> navController.navigate(Screen.Settings.route)
                             }
                         },
@@ -220,13 +236,7 @@ fun AppNavigation(
         if (showBottomNav) {
             NorthstarBottomNav(
                 currentRoute = currentRoute,
-                onNavSelect = { screen ->
-                    navController.navigate(screen.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
+                onNavSelect = { screen -> navigateTab(screen.route) },
             )
         }
     }

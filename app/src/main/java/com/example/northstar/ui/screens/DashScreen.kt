@@ -63,11 +63,42 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 
+    // Cross-OEM: is the app exempt from battery optimization? Without it, OxygenOS/One UI/MIUI/etc.
+    // kill the stream when the screen turns off. Re-checked on resume (the rider grants it in a
+    // system dialog and returns).
+    var batteryOk by remember {
+        mutableStateOf(com.example.northstar.util.DeviceReadiness.isIgnoringBatteryOptimizations(context))
+    }
+
+    // The battery-exemption system dialog, launched as the last step before connecting. Whatever
+    // the rider chooses, we re-check and continue the connect they started — no second button.
+    val batteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        batteryOk = com.example.northstar.util.DeviceReadiness.isIgnoringBatteryOptimizations(context)
+        vm.connect()
+    }
+
+    // Connect, but first ask for background activity (battery-optimization exemption) once if it's
+    // not already granted — folded into Connect so there's a single button. Remembered so we don't
+    // re-prompt on later connects.
+    fun connectWithBackgroundCheck() {
+        if (!batteryOk && !com.example.northstar.util.DeviceReadiness.batteryExemptionAsked(context)) {
+            com.example.northstar.util.DeviceReadiness.markBatteryExemptionAsked(context)
+            val launched = runCatching {
+                batteryLauncher.launch(com.example.northstar.util.DeviceReadiness.batteryExemptionIntent(context))
+            }.isSuccess
+            if (!launched) vm.connect()  // OEM without the standard dialog — connect anyway
+        } else {
+            vm.connect()
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         val essentialOk = essentialPermissions.all { results[it] == true }
-        if (essentialOk) vm.connect()
+        if (essentialOk) connectWithBackgroundCheck()
     }
 
     // Local preview state (mirrors what the dash shows)
@@ -99,13 +130,6 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
     }
 
     val streaming = ui.stage == ConnStage.STREAMING
-
-    // Cross-OEM: is the app exempt from battery optimization? Without it, OxygenOS/One UI/MIUI/etc.
-    // kill the stream when the screen turns off. Re-checked on resume (the rider grants it in a
-    // system dialog and returns).
-    var batteryOk by remember {
-        mutableStateOf(com.example.northstar.util.DeviceReadiness.isIgnoringBatteryOptimizations(context))
-    }
 
     // Auto-connect on opening the Dash screen, so the rider doesn't tap "Connect" every
     // ride — just open the app. Fires once; if the dash is off it errors out quietly and
@@ -221,7 +245,8 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                                             android.content.Intent(android.provider.Settings.Panel.ACTION_WIFI)
                                         )
                                     }
-                                    hasEssentialPermissions() -> vm.connect()
+                                    // Connect handles the background-activity ask itself (single button).
+                                    hasEssentialPermissions() -> connectWithBackgroundCheck()
                                     else -> permissionLauncher.launch(requestedPermissions)
                                 }
                             },
@@ -255,42 +280,6 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
             }
         }
 
-        // Cross-OEM background-activity prompt: without the battery-optimization exemption,
-        // OxygenOS / One UI / MIUI / ColorOS kill the stream once the screen turns off. Shown
-        // until granted; the system dialog is uniform across devices.
-        if (!streaming && !batteryOk) {
-            NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text(
-                            "Allow background activity",
-                            color = Warn, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            "Some phones (OnePlus, Samsung, Xiaomi…) stop the dash stream when the " +
-                                "screen turns off unless Northstar may run in the background.",
-                            color = TextMid, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp),
-                        )
-                    }
-                    NorthstarBtn(
-                        "Allow",
-                        onClick = {
-                            runCatching {
-                                context.startActivity(com.example.northstar.util.DeviceReadiness.batteryExemptionIntent(context))
-                            }.onFailure {
-                                runCatching { context.startActivity(com.example.northstar.util.DeviceReadiness.appSettingsIntent(context)) }
-                            }
-                        },
-                        variant = BtnVariant.Primary,
-                        size = BtnSize.Sm,
-                    )
-                }
-            }
-        }
 
         // Circular viewport with streaming aura
         Box(

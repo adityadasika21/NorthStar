@@ -23,10 +23,26 @@ import android.provider.Settings
  */
 object DeviceReadiness {
 
+    private const val PREFS = "northstar_readiness"
+    private const val KEY_BATTERY_ASKED = "battery_exemption_asked"
+
     /** True if the OS won't throttle/kill us in the background (needed for screen-off streaming). */
     fun isIgnoringBatteryOptimizations(ctx: Context): Boolean {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
         return pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    }
+
+    /**
+     * Whether we've already shown the rider the battery-exemption dialog once. We fold the request
+     * into the first Connect tap and remember it here, so we never re-prompt on later connects even
+     * if they declined (they can still grant it later from system settings).
+     */
+    fun batteryExemptionAsked(ctx: Context): Boolean =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_BATTERY_ASKED, false)
+
+    fun markBatteryExemptionAsked(ctx: Context) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_BATTERY_ASKED, true).apply()
     }
 
     /**

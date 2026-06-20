@@ -44,10 +44,10 @@ android {
         // don't pretend to support it. Also makes the API-26 notification paths always safe.
         minSdk = 29
         targetSdk = 36
-        // Marketing version stays 1.3 (shown as 1.3.0 in-app); versionCode just increments so
-        // updates install in place — it isn't user-facing.
-        versionCode = 12
-        versionName = "1.3.0"
+        // 1.3.1 = hotfix for the MapLibre page-switch SIGSEGV that shipped in 1.3.0 (code 12).
+        // versionCode 13 > 12 so it installs in place as an update.
+        versionCode = 13
+        versionName = "1.3.1"
 
         // Test-channel telemetry: ride/connection diagnostics upload to Firestore so logs can be
         // pulled remotely (no adb) while iterating on test builds. MUST be flipped to "false" for

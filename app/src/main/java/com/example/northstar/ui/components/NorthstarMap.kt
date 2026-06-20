@@ -71,6 +71,11 @@ fun NorthstarMap(
     val mapView = remember {
         MapView(context, MapLibreMapOptions().textureMode(true)).apply { onCreate(null) }
     }
+    // Set the instant we start tearing down (BEFORE onDestroy). The style loads over the NETWORK, so
+    // getMapAsync/setStyle callbacks can fire LATE — after the user has already navigated away and the
+    // native MapView was freed. Touching the map/style then derefs freed memory → SIGSEGV in
+    // libmaplibre.so (the #1 "crashes while switching pages" crash). Every async callback bails on this.
+    val destroyed = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
 
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var lineMgr by remember { mutableStateOf<LineManager?>(null) }
@@ -93,9 +98,14 @@ fun NorthstarMap(
         }
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose {
+            destroyed.set(true)   // block any in-flight async callback from touching the freed map
             lifecycleOwner.lifecycle.removeObserver(obs)
-            lineMgr?.onDestroy(); symbolMgr?.onDestroy()
-            // Single, ordered teardown of the native MapView.
+            // Do NOT call lineMgr/symbolMgr.onDestroy() here. The symbolicated tombstone shows THAT is
+            // the page-switch crash: AnnotationManager.onDestroy() → DraggableAnnotationController →
+            // getLayerId → native Layer::getId, which SIGSEGVs when the map's native peer is already
+            // gone during fast navigation (and runCatching can't catch a native crash). MapView
+            // .onDestroy() frees the style and every layer/manager on it, so the managers are torn
+            // down safely for us — manually destroying them first is both redundant and crash-prone.
             runCatching { mapView.onStop() }
             runCatching { mapView.onDestroy() }
         }
@@ -103,6 +113,7 @@ fun NorthstarMap(
 
     LaunchedEffect(mapView) {
         mapView.getMapAsync { m ->
+            if (destroyed.get()) return@getMapAsync   // navigated away before the map was ready
             map = m
             m.uiSettings.apply {
                 isRotateGesturesEnabled = false
@@ -112,6 +123,9 @@ fun NorthstarMap(
                 isLogoEnabled = false
             }
             m.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
+                // The style loads over the network — by the time it lands the screen may be gone.
+                // Creating Line/SymbolManager on a destroyed MapView is the native crash; bail first.
+                if (destroyed.get()) return@setStyle
                 style.addImage(RIDER_ICON, chevronBitmap())
                 style.addImage(DEST_ICON, destPinBitmap())
                 lineMgr = LineManager(mapView, m, style)
@@ -125,6 +139,7 @@ fun NorthstarMap(
 
     // Redraw route + markers whenever the data or mode changes.
     LaunchedEffect(styleReady, routePoints.size, dest, riderLat, riderLng, riderBearing, navMode) {
+        if (destroyed.get()) return@LaunchedEffect
         val lm = lineMgr ?: return@LaunchedEffect
         val sm = symbolMgr ?: return@LaunchedEffect
         lm.deleteAll(); sm.deleteAll()
@@ -145,6 +160,7 @@ fun NorthstarMap(
 
     // Camera control.
     LaunchedEffect(styleReady, riderLat, riderLng, riderBearing, navMode, fitRoute, routePoints.size) {
+        if (destroyed.get()) return@LaunchedEffect
         val m = map ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
         when {

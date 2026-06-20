@@ -28,6 +28,29 @@ object ExitInfoCollector {
     private const val PREFS = "northstar_exitinfo"
     private const val KEY_LAST_TS = "last_exit_ts"
 
+    /**
+     * Tag THIS live process with the build that's running, so when it dies its exit record carries
+     * the build that actually crashed — not whatever build happens to be installed when we read the
+     * record back on the next launch.
+     *
+     * Without this, [writeExit] stamped `BuildId.sha12` of the *current* install, which mis-attributed
+     * crashes: a native crash on build A, collected after build B was sideloaded, was labelled build B.
+     * [ActivityManager.setProcessStateSummary] is a small (≤128 B) blob Android preserves in the exit
+     * record; we store the running build's sha12 there and read it back via [ApplicationExitInfo.
+     * getProcessStateSummary]. Call once from Application.onCreate.
+     */
+    fun arm(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val app = context.applicationContext
+        // sha12 hashes the APK (blocks first time) — do it off the main thread.
+        Thread {
+            runCatching {
+                val am = app.getSystemService(ActivityManager::class.java) ?: return@runCatching
+                am.setProcessStateSummary(BuildId.sha12(app).toByteArray(Charsets.UTF_8))
+            }.onFailure { Log.w(TAG, "arm failed: ${it.message}") }
+        }.apply { isDaemon = true }.start()
+    }
+
     fun collect(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         runCatching {
@@ -66,12 +89,19 @@ object ExitInfoCollector {
             info.traceInputStream?.bufferedReader()?.use { it.readText() }
         }.getOrNull()
 
+        // The build that ACTUALLY died — carried in the process state summary we armed at startup.
+        // "unknown" for exits recorded before arming (older builds) so we never mis-claim a build.
+        val crashedBuild = runCatching {
+            info.processStateSummary?.toString(Charsets.UTF_8)?.takeIf { it.isNotBlank() }
+        }.getOrNull() ?: "unknown"
+
         val text = buildString {
             appendLine("=== Northstar process exit (ApplicationExitInfo) ===")
             appendLine("when=$stamp (${info.timestamp})")
             appendLine("exception=${reasonName(info.reason)} — ${info.description ?: ""}")
             appendLine("importance=${info.importance} status=${info.status}")
-            appendLine("apk=${BuildId.sha12(context)}")
+            appendLine("apk=$crashedBuild")
+            appendLine("collected-by=${BuildId.sha12(context)}")
             appendLine("app=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine("device=${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("android=${Build.VERSION.RELEASE} (sdk ${Build.VERSION.SDK_INT})")

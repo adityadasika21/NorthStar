@@ -25,7 +25,13 @@ class DashSession(private val scope: CoroutineScope) {
         private const val TAG           = "DashSession"
         private const val AUTH_TIMEOUT  = 15_000L
         private const val BURST_PAUSE   = 20L
-        private const val PROJ_HB_MS     = 42L    // ~24 Hz — MUST match DashEncoder.FPS / the encoder loop rate
+        // Projection control keep-alive (a TLV, NOT the video). Now that the video cadence is
+        // motion-adaptive (250 ms active / 500 ms idle, RE-style), this is a STEADY keep-alive pinned
+        // to the fast video interval — i.e. always sent at least as often as a video frame, never
+        // slower. That's the safe direction (the dash's projection state never starves). The pcap of
+        // the official RE app will confirm whether RE couples its equivalent control packet to the
+        // video rate; if it runs slower, raise this. Was 42 ms (24 Hz) to match the old fixed loop.
+        private const val PROJ_HB_MS     = 250L   // 4 Hz — matches FRAME_MS_ACTIVE (the fastest video rate)
         private const val ROUTE_CARD_MS  = 1_000L // 1 Hz keep-alive
         // While streaming, the dash sends a frame-decoded ack (09 06/04 55) every frame. If those
         // STOP for this long the dash is gone (out of range / powered off) — but over UDP there's no
@@ -58,6 +64,24 @@ class DashSession(private val scope: CoroutineScope) {
     private var routeCardJob: Job? = null
     private var heartbeatJob: Job? = null
     private var navInfoJob: Job? = null
+    private var mediaInfoJob: Job? = null
+
+    // Now-playing + incoming-call pushed to the dash at ~1 Hz (mirrors RE's 05 0d / 05 22 cadence).
+    // Strings, not the media model, so the protocol layer stays decoupled from the media provider.
+    @Volatile private var npTitle: String? = null
+    @Volatile private var npAlbum = ""
+    @Volatile private var npArtist = ""
+    @Volatile private var caller: String? = null
+
+    /** Push the latest now-playing metadata; sent to the dash at 1 Hz while streaming (null title = hide). */
+    fun updateNowPlaying(title: String?, album: String, artist: String) {
+        npTitle = title?.takeIf { it.isNotBlank() }
+        npAlbum = album
+        npArtist = artist
+    }
+
+    /** Push the current incoming-call caller name (null clears it). */
+    fun updateCall(callerName: String?) { caller = callerName?.takeIf { it.isNotBlank() } }
 
     // Live nav-info pushed to the dash bubble at ~1 Hz (set by NavEngine output).
     @Volatile private var navManeuver = DashCommands.NAV_MANEUVER_CONTINUE
@@ -114,6 +138,7 @@ class DashSession(private val scope: CoroutineScope) {
         launchProjectionHeartbeat()
         launchRouteCardKeepAlive()
         launchNavInfo()
+        launchMediaInfo()
     }
 
     fun sendRtp(packet: ByteArray) { socket?.sendRtp(packet) }
@@ -132,7 +157,7 @@ class DashSession(private val scope: CoroutineScope) {
         // Cancel the session coroutine FIRST so it can't race past auth and flip state to
         // READY after we tear down (which would re-trigger streaming on a dead socket).
         sessionJob?.cancel(); sessionJob = null
-        rxJob?.cancel(); projHbJob?.cancel(); routeCardJob?.cancel(); heartbeatJob?.cancel(); navInfoJob?.cancel()
+        rxJob?.cancel(); projHbJob?.cancel(); routeCardJob?.cancel(); heartbeatJob?.cancel(); navInfoJob?.cancel(); mediaInfoJob?.cancel()
         navActive = false
         socket?.let {
             runCatching { it.send(DashCommands.projectionStop()) }
@@ -383,6 +408,38 @@ class DashSession(private val scope: CoroutineScope) {
                             totalUnit = navTotalUnit,
                         )
                     )
+                }
+                delay(ROUTE_CARD_MS)
+            }
+        }
+    }
+
+    /**
+     * Now-playing (05 0d) + incoming-call (05 22) keep-alive, ~1 Hz — the cadence the official RE app
+     * used on the wire. Both must REPEAT (the dash drops a card it stops hearing about). Call card is
+     * sent whenever a caller is set; cleared once on the ringing→idle transition.
+     */
+    private fun launchMediaInfo() {
+        mediaInfoJob?.cancel()
+        mediaInfoJob = scope.launch(Dispatchers.IO) {
+            var prevCaller: String? = null
+            var loggedNp = false
+            var loggedCall = false
+            while (isActive && _state.value == DashState.STREAMING) {
+                val c = caller
+                when {
+                    c != null -> {
+                        runCatching { socket?.send(DashCommands.callNotify(c)) }
+                        if (!loggedCall) { loggedCall = true
+                            com.example.northstar.data.RideDiagnostics.log("media", "TX call card 05 22: $c") }
+                    }
+                    prevCaller != null -> { runCatching { socket?.send(DashCommands.callClear()) }; loggedCall = false }
+                }
+                prevCaller = c
+                npTitle?.let {
+                    runCatching { socket?.send(DashCommands.nowPlaying(it, npAlbum, npArtist)) }
+                    if (!loggedNp) { loggedNp = true
+                        com.example.northstar.data.RideDiagnostics.log("media", "TX now-playing 05 0d: $it") }
                 }
                 delay(ROUTE_CARD_MS)
             }

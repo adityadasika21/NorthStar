@@ -175,6 +175,7 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
         ScreenHeader(
             eyebrow = "What the rider sees",
             title = "Dash view",
+            hint = "A live preview of the map sent to the dash. Tap Connect to join the bike's WiFi and stream — your phone screen can stay off.",
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (streaming && ui.gpsStatus != com.example.northstar.viewmodel.GpsStatus.GOOD) {
@@ -311,8 +312,8 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                     .border(2.dp, Line2, CircleShape),
             ) {
                 val dashFrame = previewFrame
-                if (streaming && dashFrame != null) {
-                    androidx.compose.foundation.Image(
+                when {
+                    streaming && dashFrame != null -> androidx.compose.foundation.Image(
                         bitmap = dashFrame.asImageBitmap(),
                         contentDescription = "Live dash frame",
                         // The dash is round and shows the centred circle of the 526×300 frame;
@@ -320,8 +321,22 @@ fun DashScreen(vm: DashViewModel = viewModel()) {
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
-                } else {
-                    NorthstarMap(
+                    // Streaming but the first dash frame hasn't been produced yet: show a lightweight
+                    // placeholder, NOT the MapLibre map. The off-screen encoder is spinning up here,
+                    // and instantiating + tearing down MapLibre's native MapView in this exact window
+                    // (it gets destroyed the instant the first frame swaps it out) raced the encoder
+                    // and SIGSEGV'd the whole process — which froze the dash on its last frame (the
+                    // "still image"). Keeping MapLibre out of the streaming path removes that race.
+                    streaming -> Box(
+                        Modifier.fillMaxSize().background(Color(0xFF0B0D0E)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Preparing dash view…",
+                            color = TextLo, fontSize = 12.sp, fontFamily = GeistMonoFamily,
+                        )
+                    }
+                    else -> NorthstarMap(
                         riderLat = ui.riderLat,
                         riderLng = ui.riderLng,
                         dest = ui.destLatLng,

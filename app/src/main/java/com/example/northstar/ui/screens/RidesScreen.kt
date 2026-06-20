@@ -47,7 +47,8 @@ fun RidesScreen(ridesViewModel: RidesViewModel = viewModel()) {
             .padding(18.dp)
             .padding(bottom = 24.dp),
     ) {
-        ScreenHeader(eyebrow = "Telemetry", title = "Ride history")
+        ScreenHeader(eyebrow = "Telemetry", title = "Ride history",
+            hint = "Every connected ride is saved here — distance, duration, and the route you took.")
 
         if (rides.isEmpty()) {
             EmptyRides()

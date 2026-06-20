@@ -255,6 +255,51 @@ object DashCommands {
         return ("%04X".format(outerLen) + innerHex).hexToBytes()
     }
 
+    // ── Media now-playing (05 0d) + telephony (05 22) ─────────────────────
+    // Reverse-engineered from a live capture of the official RE app (2026-06):
+    //   05 0d value = three NUL-separated text fields [title]\0[album]\0[artist],
+    //                 each truncated to ~19–20 chars (the dash's display width).
+    //   05 22 value = caller display name, NUL-terminated, re-sent ~1 Hz while ringing.
+    //   05 40       = album-art JPEG, fragmented across ~1 KB packets (see albumArtFrames).
+    // K1GPacket.build emits the exact captured frame: [len][segcount][..]"K1G "[seq] TT SS LL value.
+
+    private const val MEDIA_FIELD_MAX = 20   // RE truncates each field to the dash display width
+
+    private fun mediaField(s: String): ByteArray {
+        val t = if (s.length > MEDIA_FIELD_MAX) s.substring(0, MEDIA_FIELD_MAX) else s
+        return t.toByteArray(Charsets.UTF_8)
+    }
+
+    /** 05 0d now-playing card: title / album / artist, NUL-separated (matches RE's layout). */
+    fun nowPlaying(title: String, album: String, artist: String): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(mediaField(title)); out.write(0x00)
+        out.write(mediaField(album)); out.write(0x00)
+        out.write(mediaField(artist))
+        return K1GPacket.build(K1GPacket.tlv(0x05, 0x0D, out.toByteArray()))
+    }
+
+    /** 05 22 incoming-call notification: caller name, NUL-terminated. Re-send ~1 Hz while ringing. */
+    fun callNotify(callerName: String): ByteArray {
+        val name = mediaField(callerName)
+        return K1GPacket.build(K1GPacket.tlv(0x05, 0x22, name + 0x00.toByte()))
+    }
+
+    /** Best-effort "call ended": empty 05 22. RE's exact clear wasn't captured; the dash also
+     *  times the notification out once callNotify stops repeating, so this is belt-and-suspenders. */
+    fun callClear(): ByteArray = K1GPacket.build(K1GPacket.tlv(0x05, 0x22, byteArrayOf(0x00)))
+
+    /**
+     * 05 40 album-art frames (EXPERIMENTAL — fragment sub-framing unconfirmed). The capture showed
+     * the art split across ~1 KB 05 40 TLVs with an incrementing seq byte; the 2-byte intra-value
+     * prefix we saw isn't decoded yet, so this is NOT auto-sent until validated against the dash.
+     * Returns one packet per ~1000-byte JPEG chunk.
+     */
+    fun albumArtFrames(jpeg: ByteArray, chunk: Int = 1000): List<ByteArray> =
+        jpeg.toList().chunked(chunk).map { c ->
+            K1GPacket.build(K1GPacket.tlv(0x05, 0x40, c.toByteArray()))
+        }
+
     private fun indexOf(haystack: ByteArray, needle: ByteArray, fromEnd: Boolean = false): Int {
         val range = if (fromEnd) (haystack.size - needle.size downTo 0) else (0..haystack.size - needle.size)
         outer@ for (i in range) {

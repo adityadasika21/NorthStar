@@ -1,7 +1,10 @@
 package com.example.northstar.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,6 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.northstar.ui.NorthstarIcons
@@ -61,7 +67,8 @@ fun SettingsScreen(
             .padding(18.dp)
             .padding(bottom = 24.dp),
     ) {
-        ScreenHeader(title = "Settings", onBack = onBack)
+        ScreenHeader(title = "Settings", onBack = onBack,
+            hint = "Connection, screen-off streaming, voice guidance, units, and media/call permissions.")
 
         // Account card
         NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp, onClick = {}) {
@@ -105,6 +112,63 @@ fun SettingsScreen(
             NorthstarDivider(Modifier.padding(horizontal = 6.dp))
             SettingRow(NorthstarIcons.Dash, "Keep dash awake", "Prevent Tripper sleep",
                 control = { NorthstarToggle(keepAwake) { keepAwake = it } }, last = true)
+        }
+
+        SectionLabel("Media & calls on dash")
+        // Re-check the grant on ON_RESUME so the chip flips to "On" the moment the user comes back
+        // from the system notification-access screen (the Settings value isn't observable on its own).
+        val lifecycleOwner = LocalLifecycleOwner.current
+        fun answerGranted() = androidx.core.content.ContextCompat.checkSelfPermission(
+            ctx, android.Manifest.permission.ANSWER_PHONE_CALLS,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        var mediaGranted by remember { mutableStateOf(com.example.northstar.media.MediaInfoProvider.isAccessGranted(ctx)) }
+        var callAnswerGranted by remember { mutableStateOf(answerGranted()) }
+        DisposableEffect(lifecycleOwner) {
+            val obs = LifecycleEventObserver { _, e ->
+                if (e == Lifecycle.Event.ON_RESUME) {
+                    mediaGranted = com.example.northstar.media.MediaInfoProvider.isAccessGranted(ctx)
+                    callAnswerGranted = answerGranted()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(obs)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+        }
+        val callPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            callAnswerGranted = it
+        }
+        NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
+            SettingRow(
+                NorthstarIcons.Zap,
+                "Now playing & calls on dash",
+                if (mediaGranted) "Enabled · song info + caller shown while riding"
+                else "Tap to allow notification access",
+                control = {
+                    NorthstarChip(
+                        if (mediaGranted) "On" else "Enable",
+                        if (mediaGranted) ChipTone.Gold else ChipTone.Off, dot = true,
+                    )
+                },
+                onClick = if (mediaGranted) null else {
+                    { runCatching { ctx.startActivity(com.example.northstar.media.MediaInfoProvider.accessSettingsIntent()) } }
+                },
+            )
+            NorthstarDivider(Modifier.padding(horizontal = 6.dp))
+            SettingRow(
+                NorthstarIcons.Bt,
+                "Answer calls from joystick",
+                if (callAnswerGranted) "Enabled · UP answers, DOWN rejects"
+                else "Tap to allow answering/rejecting calls",
+                control = {
+                    NorthstarChip(
+                        if (callAnswerGranted) "On" else "Enable",
+                        if (callAnswerGranted) ChipTone.Gold else ChipTone.Off, dot = true,
+                    )
+                },
+                last = true,
+                onClick = if (callAnswerGranted) null else {
+                    { callPermLauncher.launch(android.Manifest.permission.ANSWER_PHONE_CALLS) }
+                },
+            )
         }
 
         SectionLabel("Voice & guidance")
@@ -250,10 +314,14 @@ private fun SettingRow(
     sub: String? = null,
     control: @Composable () -> Unit,
     last: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 13.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .padding(horizontal = 6.dp, vertical = 13.dp),
     ) {
         Box(
             contentAlignment = Alignment.Center,

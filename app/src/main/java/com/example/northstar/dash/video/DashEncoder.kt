@@ -11,14 +11,19 @@ import android.view.Surface
 
 /**
  * MediaCodec H.264 encoder for the Tripper Dash stream:
- *   526 × 300, up to 15 fps, ~0.8 Mbps, Baseline L4.1, 1-second IDR interval.
+ *   526 × 300, Baseline L4.1, 1-second IDR interval.
  *
- * [FPS] is the MAX/hint rate — the frame loop feeds ~15 fps while moving (the dash decoder's
- * steady ceiling; the predictor interpolates motion between GPS fixes) and throttles to a few
- * fps when stopped to save power.
- * The hardware encoder auto-timestamps each frame from the input surface, so the
- * variable feed rate is fine. Tiny resolution → still far under the OLED-projection
- * draw this whole project exists to avoid.
+ * Cadence/bitrate are DRIVEN BY THE FRAME LOOP, not fixed here — see DashViewModel's motion-adaptive
+ * pacing. This mirrors what the official RE Prime app actually does (confirmed by decompiling
+ * com.royalenfield.reprime, 2026-06): it projects the map at only **2–4 fps / 100–200 kbps**, with
+ * two profiles it switches between. A map doesn't need video frame rates, and crucially a few fps
+ * NEVER overruns the dash decoder — which is the real cause of the blink/stutter we kept fighting at
+ * 24 fps. So we match RE's proven-stable envelope: configure at the ACTIVE profile (4 fps hint,
+ * ~200 kbps) and drop the bitrate live via [requestBitrate] when the map goes static. ([FPS] here is
+ * only the encoder's frame-rate HINT; the real rate is the surface feed rate.)
+ *
+ * History (kept so we don't re-walk it): we'd climbed 4 → 12 → 24 fps and 0.8 → 1.2 Mbps chasing
+ * "smoother", but the decompile shows RE deliberately stays LOW. Reverting to that envelope is the fix.
  *
  * Frames are drawn with Android Canvas via the input Surface's hardware
  * canvas — call [renderFrame] with a draw lambda, then [drain] to pull
@@ -30,16 +35,14 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
     companion object {
         const val WIDTH   = 526
         const val HEIGHT  = 300
-        // Frame rate. better-dash uses 4 fps; we've climbed to 12 (delivered ~10, thermal OK on the
-        // bike) and are now field-testing 24 since it held steady. The projection keep-alive
-        // (DashSession.PROJ_HB_MS) is bumped to match — they MUST stay equal. The phone pipeline may
-        // cap actual delivery below 24 (per-frame render+encode cost); the ride log shows the real
-        // rate. Revert toward 12 if the dash decoder blinks/stutters.
-        const val FPS     = 24
-        // ~1.2 Mbps. 0.8 briefly blocked/pixelated on high-motion frames (sharp turns, zoom) before
-        // the rate settled; 1.2 gives the encoder headroom for those moments yet stays far under the
-        // old 2.0 that overran the decoder.
-        const val BITRATE = 1_200_000
+        // Encoder frame-rate HINT only (actual rate = how fast the loop feeds the surface). RE's high
+        // profile is 4 fps; we configure to match. The loop paces 4 fps (active) / 2 fps (idle).
+        const val FPS     = 4
+        // ~200 kbps = RE's high-profile bitrate (decompiled q2g = 204800). The loop drops this to
+        // ~100 kbps (RE low profile, q2g = 102400) via requestBitrate() when the map is static.
+        // Far under the old 1.2 Mbps that risked overrunning the dash decoder.
+        const val BITRATE = 200_000
+        const val BITRATE_IDLE = 100_000
         private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
         private const val DRAIN_TIMEOUT_US = 10_000L
         private const val TAG = "DashEncoder"
@@ -130,6 +133,20 @@ class DashEncoder(private val onEncodedData: (ByteArray, Boolean) -> Unit) {
                 }
             }
         }
+    }
+
+    /**
+     * Change the target bitrate live, without rebuilding the encoder — RE switches between its
+     * ~200 kbps (moving) and ~100 kbps (static) profiles this way. MediaCodec applies
+     * PARAMETER_KEY_VIDEO_BITRATE to the running session; no IDR or reconfigure needed.
+     */
+    fun requestBitrate(bps: Int) {
+        val c = codec ?: return
+        runCatching {
+            c.setParameters(android.os.Bundle().apply {
+                putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps)
+            })
+        }.onFailure { Log.w(TAG, "requestBitrate($bps) failed: ${it.message}") }
     }
 
     fun release() {

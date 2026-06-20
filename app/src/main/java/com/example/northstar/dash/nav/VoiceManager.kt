@@ -48,8 +48,18 @@ class VoiceManager private constructor(context: Context) {
         if (tts != null) return
         tts = TextToSpeech(app) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
-            if (ttsReady) tts?.language = Locale.getDefault()
-            else Log.w(TAG, "TextToSpeech init failed: $status")
+            if (ttsReady) {
+                tts?.language = Locale.getDefault()
+                // Without explicit attributes the nav voice can land on the earpiece/phone speaker
+                // instead of the connected BT helmet. NAVIGATION_GUIDANCE routes to the active media
+                // output (BT A2DP / speaker) and ducks music while speaking — exactly what we want.
+                tts?.setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+            } else Log.w(TAG, "TextToSpeech init failed: $status")
         }
     }
 
@@ -58,6 +68,16 @@ class VoiceManager private constructor(context: Context) {
             if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
             tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 180)
         }.onFailure { Log.w(TAG, "chime failed: ${it.message}") }
+    }
+
+    /**
+     * One-off spoken status alert (e.g. "Dash disconnected") — distinct from turn guidance. Speaks
+     * a real phrase even in CHIME mode (a status alert needs words), routed to BT via the TTS audio
+     * attributes; stays silent only when voice is fully OFF.
+     */
+    fun alert(text: String) {
+        if (_mode.value == VoiceMode.OFF) return
+        speak(text)
     }
 
     private fun speak(text: String) {

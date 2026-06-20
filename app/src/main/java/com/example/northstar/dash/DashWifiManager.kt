@@ -74,6 +74,10 @@ class DashWifiManager(
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var reconnectJob: Job? = null
+    // True once we've successfully connected this session. Lets us tell a MID-RIDE drop (keep
+    // retrying — the dash AP may have hung and will return after a power-cycle) apart from a failed
+    // INITIAL connect / user-declined dialog (give up, don't spam).
+    private var everConnected = false
     private var wantConnected = false
     private var pendingSsid = ""
     private var pendingPassword = ""
@@ -98,6 +102,7 @@ class DashWifiManager(
      */
     fun connect(ssid: String, password: String = "", prefixMatch: Boolean = false) {
         wantConnected    = true
+        everConnected    = false   // fresh user-initiated attempt
         pendingSsid      = ssid
         pendingPassword  = password
         pendingPrefix    = prefixMatch
@@ -151,6 +156,7 @@ class DashWifiManager(
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 this@DashWifiManager.network = network
+                everConnected = true
                 reconnectJob?.cancel()
                 // SSID is read in onCapabilitiesChanged (transportInfo isn't populated here
                 // yet on Android 13+). Try once anyway, else fall back to the pending value.
@@ -176,14 +182,27 @@ class DashWifiManager(
             }
 
             override fun onUnavailable() {
-                Log.w(TAG, "WiFi unavailable — SSID not found or user declined")
                 this@DashWifiManager.network = null
+                // Mid-ride drop where the dash AP went missing (we HAD connected): keep retrying so a
+                // dash that's hung — and revived by a bike power-cycle — auto-rejoins with no manual
+                // step. The ViewModel's reconnect-giveup timer still bounds this if it never returns.
+                if (everConnected && wantConnected) {
+                    Log.w(TAG, "WiFi unavailable mid-session — dash AP missing, retrying in ${RECONNECT_DELAY}ms")
+                    _state.value = WifiState(
+                        status = WifiConnStatus.REQUESTING,
+                        ssid   = pendingSsid,
+                        error  = "Dash WiFi lost — reconnecting…",
+                    )
+                    scheduleReconnect()
+                    return
+                }
+                // Failed INITIAL connect / user declined the dialog → give up.
+                Log.w(TAG, "WiFi unavailable — SSID not found or user declined")
                 _state.value = WifiState(
                     status = WifiConnStatus.ERROR,
                     ssid   = pendingSsid,
                     error  = "Could not connect to '$pendingSsid' — network not found or wrong password",
                 )
-                // Don't auto-retry onUnavailable; user must try again
                 wantConnected = false
             }
 

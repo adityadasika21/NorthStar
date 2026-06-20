@@ -112,6 +112,7 @@ fun GarageScreen(
         ScreenHeader(
             eyebrow = "Himalayan 450 · ${"%,.1f".format(ui.odometerKm)} km",
             title = "Garage",
+            hint = "Track maintenance, fuel fill-ups and mileage, and service-due reminders. Tap Odometer to keep the distance current.",
             trailing = {
                 NorthstarBtn("Odometer", onClick = { showOdo = true }, variant = BtnVariant.Ghost, size = BtnSize.Sm)
             },

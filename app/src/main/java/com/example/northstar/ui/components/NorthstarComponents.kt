@@ -355,6 +355,7 @@ fun ScreenHeader(
     modifier: Modifier = Modifier,
     title: String? = null,
     eyebrow: String? = null,
+    hint: String? = null,
     wordmark: Boolean = false,
     onBack: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
@@ -393,6 +394,13 @@ fun ScreenHeader(
                             title, color = TextHi, fontSize = 23.sp,
                             fontWeight = FontWeight.Bold, fontFamily = GeistFamily,
                             letterSpacing = (-0.46).sp,
+                        )
+                    }
+                    // One-line "what this screen is for" guidance, shown right under the title.
+                    if (hint != null) {
+                        Text(
+                            hint, color = TextLo, fontSize = 12.sp, fontFamily = GeistFamily,
+                            lineHeight = 15.sp, modifier = Modifier.padding(top = 3.dp, end = 8.dp),
                         )
                     }
                 }

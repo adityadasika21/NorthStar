@@ -159,6 +159,27 @@ fun RouteScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // No destination yet → tell the rider exactly how to start one. A route ALWAYS begins by
+            // sharing a place from Google Maps into Northstar; there's no in-app search by design.
+            if ((dest?.lat == null || dest.lng == null) && !routeState.isResolving) {
+                NorthstarCard(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), padding = 16.dp) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(NorthstarIcons.Share, contentDescription = null, tint = Gold, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("Start a route from Google Maps", color = TextHi, fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily)
+                            Text(
+                                "Open Google Maps → pick a place → tap Share → choose Northstar. " +
+                                    "The destination lands here, then tap Start navigation to send it to the dash.",
+                                color = TextMid, fontSize = 13.sp, fontFamily = GeistFamily,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
             Eyebrow("Destination", Modifier.padding(bottom = 6.dp))
 
             Row(verticalAlignment = Alignment.Top) {

@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Keep streaming to the dash with the screen off -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Haptic cue when the dash link drops mid-ride (paired with the BT voice alert). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Cross-OEM background reliability: OxygenOS / One UI / MIUI / ColorOS kill the foreground
          service (and freeze GPS) with the screen off unless the app is exempt from battery
          optimization. We request the exemption via the standard system dialog so screen-off dash
@@ -29,6 +31,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"
         tools:targetApi="34" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Answer / reject the live call from the dash joystick (TelecomManager). Runtime-granted. -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <!-- In-app updater: download the new APK from GitHub Releases and hand it to the
          system package installer (the install itself still needs the user's tap + the
          per-app "install unknown apps" grant). -->
@@ -82,6 +86,19 @@
             android:name=".dash.DashKeepAliveService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
+
+        <!-- Notification listener: grants MediaSessionManager access (now-playing → dash TLV 05 0d)
+             and reads CATEGORY_CALL notifications (caller name → dash TLV 05 22). User must enable it
+             once under Settings → Notification access; nothing is read until then. -->
+        <service
+            android:name=".media.NorthstarNotificationListener"
+            android:exported="false"
+            android:label="Northstar media &amp; calls"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- Firebase Cloud Messaging receiver. Dormant unless a Firebase project is wired up
              (google-services.json) and a push arrives. -->

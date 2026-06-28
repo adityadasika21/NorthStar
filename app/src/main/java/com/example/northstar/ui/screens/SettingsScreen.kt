@@ -29,6 +29,13 @@ import com.example.northstar.ui.theme.*
 import com.example.northstar.viewmodel.AuthViewModel
 import com.example.northstar.viewmodel.ConnectionState
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.KeyboardType
+// Importe encoder class to save the fps value in config screen
+import com.example.northstar.dash.video.DashEncoder
+import androidx.compose.material3.MaterialTheme
 
 @Composable
 fun SettingsScreen(
@@ -109,9 +116,77 @@ fun SettingsScreen(
         NorthstarCard(modifier = Modifier.fillMaxWidth(), padding = 6.dp) {
             SettingRow(NorthstarIcons.Power, "Turn phone screen off", "Map keeps streaming to the dash",
                 control = { NorthstarToggle(screenOff) { screenOff = it } })
+            
             NorthstarDivider(Modifier.padding(horizontal = 6.dp))
+            
             SettingRow(NorthstarIcons.Dash, "Keep dash awake", "Prevent Tripper sleep",
-                control = { NorthstarToggle(keepAwake) { keepAwake = it } }, last = true)
+                control = { NorthstarToggle(keepAwake) { keepAwake = it } })
+            
+            NorthstarDivider(Modifier.padding(horizontal = 6.dp))
+
+            // === DYNAMIC DASH FRAMERATE (FPS) CONFIGURATION ===
+            // State management for custom framerate text input and range validation (4 to 10 FPS).
+            var fpsText by remember { mutableStateOf(DashEncoder.CONFIG_FPS.toString()) }
+            var isFpsError by remember { mutableStateOf(false) }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 13.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(Surf2).border(1.dp, Line, RoundedCornerShape(11.dp)),
+                ) {
+                    Icon(NorthstarIcons.Zap, contentDescription = null, tint = TextMid, modifier = Modifier.size(19.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Dash Framerate", color = TextHi, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = GeistFamily)
+                    Text(
+                        text = if (isFpsError) "Value must be between 4 and 10" else "Current target: ${DashEncoder.CONFIG_FPS} FPS",
+                        color = if (isFpsError) MaterialTheme.colorScheme.error else TextLo,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                
+                OutlinedTextField(
+                    value = fpsText,
+                    onValueChange = { newValue ->
+                        if (newValue.isEmpty()) {
+                            fpsText = ""
+                            isFpsError = true
+                            return@OutlinedTextField
+                        }
+                        // Enforce numeric-only input
+                        if (newValue.all { it.isDigit() }) {
+                            fpsText = newValue
+                            val parsed = newValue.toIntOrNull()
+                            // Safe envelope validation: prevents negative values or extreme FPS 
+                            // that would overrun the bike's hardware decoder or crash the app session.
+                            if (parsed != null && parsed in 4..10) {
+                                isFpsError = false
+                                DashEncoder.CONFIG_FPS = parsed // Live update applied straight to the video pipeline
+                            } else {
+                                isFpsError = true
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    isError = isFpsError,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(75.dp).padding(end = 4.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextHi,
+                        unfocusedTextColor = TextHi,
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = Line
+                    )
+                )
+            }
+            // ==================================================
         }
 
         SectionLabel("Media & calls on dash")

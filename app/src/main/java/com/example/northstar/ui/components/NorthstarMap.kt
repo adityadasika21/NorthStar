@@ -150,10 +150,24 @@ fun NorthstarMap(
             )
         }
         dest?.let { sm.create(SymbolOptions().withLatLng(LatLng(it.first, it.second)).withIconImage(DEST_ICON).withIconSize(1.1f)) }
-        if (navMode && riderLat != null && riderLng != null) {
+        
+        if (riderLat != null && riderLng != null) {
+            /**
+             * BUGFIX: BEARING DOUBLE-ROTATION CORRECTION
+             * Inside [navMode], the map camera view rotates smoothly using the rider's current bearing.
+             * If the symbol layer rotation property is also mapped to the bearing value simultaneously,
+             * it stacks up, inducing a double-rotation distortion that maps the chevron facing sideways.
+             * * Resolution: Enforce a fixed 0f orientation (straight up relative to the viewport) inside
+             * navigation mode, letting the moving camera align the trajectory. Fall back to standard
+             * dynamic [riderBearing] orientation exclusively during North-Up tracking modes.
+             */
+            val iconRotation = if (navMode) 0f else riderBearing
+            
             sm.create(
                 SymbolOptions().withLatLng(LatLng(riderLat, riderLng))
-                    .withIconImage(RIDER_ICON).withIconRotate(riderBearing).withIconSize(1.0f)
+                    .withIconImage(RIDER_ICON)
+                    .withIconRotate(iconRotation)
+                    .withIconSize(1.0f)
             )
         }
     }
@@ -163,10 +177,27 @@ fun NorthstarMap(
         if (destroyed.get()) return@LaunchedEffect
         val m = map ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
+
+        /**
+         * CORRECTION: VERTICAL PERSPECTIVE & FOCUS SHIFT FOR MOTORCYCLE RIDING
+         * The off-screen video pipeline encoders stream downstream frames formatted at 526x300.
+         * Centering the camera directly over the coordinate places the vehicle pinpoint dead center,
+         * wasting valuable viewport real estate on terrain already covered behind the rider.
+         *
+         * Resolution: Introduce a target 120px top padding layout structure strictly during [navMode].
+         * This offsets the focal projection point, forcing the marker down into the bottom-center 
+         * third of the viewport. Maximizes upcoming road/turn foresight for active navigation.
+         */
+        if (navMode) {
+            m.setPadding(0, 120, 0, 0)
+        } else {
+            m.setPadding(0, 0, 0, 0)
+        }
+
         when {
             fitRoute && routePoints.size >= 2 -> {
                 val b = LatLngBounds.Builder()
-                routePoints.forEach { b.include(LatLng(it.lat, it.lng)) }
+                    routePoints.forEach { b.include(LatLng(it.lat, it.lng)) }
                 runCatching { m.animateCamera(CameraUpdateFactory.newLatLngBounds(b.build(), 110)) }
             }
             riderLat != null && riderLng != null -> {
@@ -175,7 +206,8 @@ fun NorthstarMap(
                     CameraPosition.Builder().target(target).zoom(NAV_ZOOM).tilt(NAV_TILT).bearing(riderBearing.toDouble()).build()
                 else
                     CameraPosition.Builder().target(target).zoom(FOLLOW_ZOOM).tilt(0.0).bearing(0.0).build()
-                runCatching { m.animateCamera(CameraUpdateFactory.newCameraPosition(pos), 600) }
+                
+                runCatching { m.animateCamera(CameraUpdateFactory.newCameraPosition(pos), 1000) }
             }
             dest != null -> runCatching {
                 m.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(dest.first, dest.second), 13.0))
